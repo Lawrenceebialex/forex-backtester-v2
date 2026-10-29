@@ -1,0 +1,131 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* ------------------------------------------------------------------ */
+/* Design tokens. RGB channels so Tailwind can apply alpha modifiers.   */
+/* Light is a designed palette, not an inversion: cool grey canvas,     */
+/* white panels, deeper bull/bear tones for contrast on white.          */
+/* ------------------------------------------------------------------ */
+@layer base {
+  :root,
+  :root[data-theme='dark'] {
+    color-scheme: dark;
+
+    --canvas: 9 11 16;
+    --surface: 16 19 27;
+    --raised: 22 26 36;
+    --overlay: 31 36 49;
+    --line: 35 41 56;
+    --line-strong: 54 62 82;
+
+    --ink: 230 234 242;
+    --ink-muted: 150 158 176;
+    --ink-subtle: 102 111 130;
+
+    --accent: 61 112 242;
+    --accent-ink: 255 255 255;
+    --bull: 34 197 140;
+    --bear: 244 84 96;
+    --warn: 245 182 66;
+
+    --chart-bg: 9 11 16;
+    --chart-grid: 24 28 39;
+    --chart-text: 134 143 162;
+    --chart-crosshair: 118 127 148;
+    --chart-label: 43 50 68;
+
+    --shadow-overlay: 0 24px 60px -12px rgb(0 0 0 / 0.65), 0 0 0 1px rgb(255 255 255 / 0.04);
+  }
+
+  :root[data-theme='light'] {
+    color-scheme: light;
+
+    --canvas: 241 244 248;
+    --surface: 255 255 255;
+    --raised: 246 248 251;
+    --overlay: 236 240 246;
+    --line: 225 230 238;
+    --line-strong: 203 210 222;
+
+    --ink: 15 23 42;
+    --ink-muted: 84 95 115;
+    --ink-subtle: 128 138 157;
+
+    --accent: 37 99 235;
+    --accent-ink: 255 255 255;
+    --bull: 5 150 105;
+    --bear: 220 38 56;
+    --warn: 202 124 8;
+
+    --chart-bg: 255 255 255;
+    --chart-grid: 238 241 246;
+    --chart-text: 96 106 124;
+    --chart-crosshair: 128 137 156;
+    --chart-label: 38 46 64;
+
+    --shadow-overlay: 0 24px 60px -16px rgb(15 23 42 / 0.28), 0 2px 8px rgb(15 23 42 / 0.06);
+  }
+
+  html,
+  body,
+  #root {
+    height: 100%;
+  }
+
+  body {
+    @apply bg-canvas font-sans text-ink antialiased;
+    overscroll-behavior: none;
+    -webkit-tap-highlight-color: transparent;
+    -webkit-text-size-adjust: 100%;
+    user-select: none;
+  }
+
+  input {
+    user-select: text;
+  }
+
+  button {
+    touch-action: manipulation;
+  }
+
+  :focus-visible {
+    outline: 2px solid rgb(var(--accent));
+    outline-offset: 2px;
+  }
+
+  ::selection {
+    background: rgb(var(--accent) / 0.3);
+  }
+}
+
+@layer utilities {
+  .no-scrollbar {
+    scrollbar-width: none;
+  }
+  .no-scrollbar::-webkit-scrollbar {
+    display: none;
+  }
+}
+
+/* Short cross-fade when the theme flips (class is added/removed by the theme store). */
+html.theme-transition,
+html.theme-transition *,
+html.theme-transition *::before,
+html.theme-transition *::after {
+  transition:
+    background-color 0.25s ease,
+    border-color 0.25s ease,
+    color 0.25s ease,
+    fill 0.25s ease,
+    stroke 0.25s ease !important;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    transition-duration: 0.01ms !important;
+  }
+}
