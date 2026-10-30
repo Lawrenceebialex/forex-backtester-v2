@@ -97,3 +97,17 @@ export function candleUpdates(
 export function latestCandle(m1: readonly Candle[], index: TimeframeIndex, cursor: number): Candle {
   return aggregate(m1, index.buckets[bucketIndexAt(index, cursor)], cursor);
 }
+
+/** Index of the bucket opening exactly at `time`, or -1. */
+export function bucketIndexByTime(index: TimeframeIndex, time: UnixSeconds): number {
+  const { buckets } = index;
+  let low = 0;
+  let high = buckets.length - 1;
+  while (low <= high) {
+    const mid = (low + high) >> 1;
+    if (buckets[mid].time === time) return mid;
+    if (buckets[mid].time < time) low = mid + 1;
+    else high = mid - 1;
+  }
+  return -1;
+}

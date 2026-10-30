@@ -1,18 +1,13 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import {
-  CandlestickSeries,
-  createChart,
-  type CandlestickData,
-  type IChartApi,
-  type ISeriesApi,
-  type MouseEventParams,
-  type UTCTimestamp,
-} from 'lightweight-charts';
+import { ChevronsRight, Scissors } from 'lucide-react';
+import { CandleChart } from '@/chart/CandleChart';
+import { readChartTheme } from '@/chart/theme';
 import { M1_CANDLES, SYMBOL, indexAtOrBefore } from '@/data/marketData';
-import type { Candle } from '@/domain/market';
-import { CHART_FONT, candleSeriesOptions, chartThemeOptions } from '@/lib/chartTheme';
+import { TIMEFRAME_SECONDS, type Candle } from '@/domain/market';
+import { formatVirtualTime } from '@/lib/formatTime';
 import {
   bucketIndexAt,
+  bucketIndexByTime,
   buildTimeframeIndex,
   candleUpdates,
   latestCandle,
@@ -21,38 +16,23 @@ import {
 import { useCandleColorsStore } from '@/stores/candleColorsStore';
 import { usePlaybackStore } from '@/stores/playbackStore';
 import { useThemeStore } from '@/stores/themeStore';
+import { useToastStore } from '@/stores/toastStore';
+import { useUiStore } from '@/stores/uiStore';
 import { ChartLegend, sameOhlc, type Ohlc } from './ChartLegend';
+import { usePositionOverlays } from './usePositionOverlays';
 
-const BAR_SPACING = 8;
-const PRICE_SCALE_WIDTH = 64;
-const RIGHT_PADDING_BARS = 8;
 /** Above this many newly opened candles in one tick, redraw with setData instead of update(). */
 const MAX_INCREMENTAL_CANDLES = 200;
 
-const toBar = (candle: Candle): CandlestickData<UTCTimestamp> => ({
-  time: candle.time as UTCTimestamp,
-  open: candle.open,
-  high: candle.high,
-  low: candle.low,
-  close: candle.close,
-});
-
-/** Shows the most recent candles at a comfortable density for the current screen width. */
-function frameRecentBars(chart: IChartApi, containerWidth: number, barCount: number) {
-  const fit = Math.max(30, Math.floor((containerWidth - PRICE_SCALE_WIDTH) / BAR_SPACING));
-  const span = Math.min(barCount, fit);
-  chart.timeScale().setVisibleLogicalRange({
-    from: barCount - span - 1,
-    to: barCount - 1 + RIGHT_PADDING_BARS,
-  });
-}
-
 export function ChartView() {
   const containerRef = useRef<HTMLDivElement>(null);
-  const chartRef = useRef<IChartApi | null>(null);
-  const seriesRef = useRef<ISeriesApi<'Candlestick'> | null>(null);
+  const chartRef = useRef<CandleChart | null>(null);
   const [hovered, setHovered] = useState<Ohlc | null>(null);
+  const [atLatest, setAtLatest] = useState(true);
+  const [lockedCandle, setLockedCandle] = useState<Candle | null>(null);
 
+  const cutMode = useUiStore((state) => state.cutMode);
+  const setCutMode = useUiStore((state) => state.setCutMode);
   const theme = useThemeStore((state) => state.theme);
   const colors = useCandleColorsStore((state) => state.colors);
   const timeframe = usePlaybackStore((state) => state.timeframe);
@@ -69,68 +49,52 @@ export function ChartView() {
     const container = containerRef.current;
     if (!container) return;
 
-    const chart = createChart(container, {
-      autoSize: true,
-      timeScale: {
-        timeVisible: true,
-        secondsVisible: false,
-        rightOffset: RIGHT_PADDING_BARS,
-        barSpacing: BAR_SPACING,
-        minBarSpacing: 1.5,
+    const chart = new CandleChart(
+      container,
+      { pricePrecision: SYMBOL.pricePrecision, pipSize: SYMBOL.pipSize },
+      readChartTheme(),
+      useCandleColorsStore.getState().colors,
+      {
+        onHover: (candle) => {
+          const next = candle ? { open: candle.open, high: candle.high, low: candle.low, close: candle.close } : null;
+          setHovered((previous) => (sameOhlc(previous, next) ? previous : next));
+        },
+        onCutChange: setLockedCandle,
+        onLatestVisibleChange: setAtLatest,
+        onVisibleRangeChange: (range) => usePlaybackStore.getState().setVisibleRange(range),
       },
-      rightPriceScale: { scaleMargins: { top: 0.12, bottom: 0.1 } },
-    });
-    chart.applyOptions(chartThemeOptions());
-
-    const series = chart.addSeries(CandlestickSeries, {
-      ...candleSeriesOptions(useCandleColorsStore.getState().colors),
-      priceFormat: { type: 'price', precision: SYMBOL.pricePrecision, minMove: SYMBOL.pipSize / 10 },
-    });
-
-    chart.subscribeCrosshairMove((param: MouseEventParams) => {
-      const bar = param.time ? (param.seriesData.get(series) as CandlestickData | undefined) : undefined;
-      const next = bar ? { open: bar.open, high: bar.high, low: bar.low, close: bar.close } : null;
-      setHovered((previous) => (sameOhlc(previous, next) ? previous : next));
-    });
-
-    chart.timeScale().subscribeVisibleTimeRangeChange((range) => {
-      usePlaybackStore
-        .getState()
-        .setVisibleRange(range ? { from: Number(range.from), to: Number(range.to) } : null);
-    });
-
-    // Canvas text is measured with whatever font is loaded at draw time: redraw once web fonts are ready.
-    let disposed = false;
-    void document.fonts.ready.then(() => {
-      if (!disposed) chart.applyOptions({ layout: { fontFamily: CHART_FONT } });
-    });
-
+    );
     chartRef.current = chart;
-    seriesRef.current = series;
+
+    // Canvas text is measured with whatever font is loaded at draw time: repaint once web fonts are ready.
+    void document.fonts.ready.then(() => {
+      if (chartRef.current === chart) chart.redraw();
+    });
+
     return () => {
-      disposed = true;
-      chart.remove();
+      chart.destroy();
       chartRef.current = null;
-      seriesRef.current = null;
     };
   }, []);
 
+  // Entry markers and SL / TP lines for open positions.
+  usePositionOverlays(chartRef);
+
   // Theme: re-read the CSS variables (the theme store has already updated the DOM).
   useEffect(() => {
-    chartRef.current?.applyOptions(chartThemeOptions());
+    chartRef.current?.setTheme(readChartTheme());
   }, [theme]);
 
-  // Candle colors.
   useEffect(() => {
-    seriesRef.current?.applyOptions(candleSeriesOptions(colors));
+    chartRef.current?.setCandleColors(colors);
   }, [colors]);
 
   // Data: draw what the virtual clock has revealed, then follow it candle by candle.
   useEffect(() => {
     const chart = chartRef.current;
-    const series = seriesRef.current;
-    if (!chart || !series) return;
+    if (!chart) return;
 
+    chart.setTimeframe(TIMEFRAME_SECONDS[timeframeIndex.timeframe], `${SYMBOL.symbol} · ${timeframeIndex.timeframe}`);
     let cursor = -1; // M1 index the chart currently shows
 
     const sync = (time: number) => {
@@ -144,15 +108,9 @@ export function ChartView() {
         bucketIndexAt(timeframeIndex, next) - bucketIndexAt(timeframeIndex, cursor) > MAX_INCREMENTAL_CANDLES;
 
       if (needsRedraw) {
-        const candles = visibleCandles(M1_CANDLES, timeframeIndex, next);
-        series.setData(candles.map(toBar));
-        if (cursor < 0 || goingBack) {
-          frameRecentBars(chart, containerRef.current?.clientWidth ?? 0, candles.length);
-        }
+        chart.setData(visibleCandles(M1_CANDLES, timeframeIndex, next), { reframe: cursor < 0 || goingBack });
       } else {
-        for (const candle of candleUpdates(M1_CANDLES, timeframeIndex, cursor, next)) {
-          series.update(toBar(candle));
-        }
+        for (const candle of candleUpdates(M1_CANDLES, timeframeIndex, cursor, next)) chart.update(candle);
       }
       cursor = next;
     };
@@ -163,10 +121,80 @@ export function ChartView() {
     });
   }, [timeframeIndex]);
 
+  // Cut mode.
+  useEffect(() => {
+    chartRef.current?.setCutMode(cutMode);
+    if (!cutMode) return;
+    const onKeyDown = (event: KeyboardEvent) => event.key === 'Escape' && setCutMode(false);
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
+  }, [cutMode, setCutMode]);
+
+  const confirmCut = () => {
+    if (!lockedCandle) return;
+    const bucket = bucketIndexByTime(timeframeIndex, lockedCandle.time);
+    if (bucket < 0) return;
+    // Cut after the chosen candle — but never forward of where the clock already is.
+    const cursor = indexAtOrBefore(usePlaybackStore.getState().currentTime);
+    const target = M1_CANDLES[Math.min(timeframeIndex.buckets[bucket].last, cursor)].time;
+    usePlaybackStore.getState().jumpTo(target);
+    setCutMode(false);
+    useToastStore.getState().push({
+      tone: 'neutral',
+      title: 'Chart cut',
+      description: `Replay continues from ${formatVirtualTime(target)} UTC`,
+    });
+  };
+
   return (
     <div className="relative min-h-0 flex-1 bg-chart">
       <div ref={containerRef} className="absolute inset-0" />
       <ChartLegend ohlc={hovered ?? latest} timeframe={timeframe} />
+
+      {!atLatest && !cutMode && (
+        <button
+          type="button"
+          onClick={() => chartRef.current?.scrollToLatest()}
+          aria-label="Scroll to latest candle"
+          className="absolute bottom-10 right-20 z-10 inline-flex h-8 items-center gap-1.5 rounded-full border border-line bg-surface/95 px-3 text-xs font-medium text-ink shadow-overlay transition hover:bg-overlay coarse:h-10"
+        >
+          Latest <ChevronsRight size={14} />
+        </button>
+      )}
+
+      {cutMode && (
+        <div
+          role="status"
+          className="absolute inset-x-3 bottom-10 z-20 mx-auto flex max-w-lg items-center gap-3 rounded-xl border border-line bg-surface p-2.5 shadow-overlay"
+        >
+          <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-accent/15 text-accent">
+            <Scissors size={16} />
+          </span>
+          <div className="min-w-0 flex-1">
+            <p className="text-sm font-medium text-ink">
+              {lockedCandle ? 'Cut after this candle?' : 'Tap a candle to choose where to cut'}
+            </p>
+            <p className="truncate font-mono text-xs tabular-nums text-ink-muted">
+              {lockedCandle ? `${formatVirtualTime(lockedCandle.time)} UTC` : 'Everything after the line is removed. Your account is unchanged.'}
+            </p>
+          </div>
+          <button
+            type="button"
+            onClick={() => setCutMode(false)}
+            className="h-9 rounded-lg px-3 text-[13px] text-ink-muted transition-colors hover:bg-overlay hover:text-ink coarse:h-11"
+          >
+            Cancel
+          </button>
+          <button
+            type="button"
+            disabled={!lockedCandle}
+            onClick={confirmCut}
+            className="h-9 rounded-lg bg-accent px-3 text-[13px] font-medium text-accent-ink transition hover:brightness-110 disabled:opacity-40 coarse:h-11"
+          >
+            Cut
+          </button>
+        </div>
+      )}
     </div>
   );
 }

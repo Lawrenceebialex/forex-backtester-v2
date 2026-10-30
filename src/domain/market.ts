@@ -39,4 +39,6 @@ export interface SymbolInfo {
   pricePrecision: number;
   /** Price distance of one pip. */
   pipSize: number;
+  /** Units of the base currency in one standard lot. */
+  contractSize: number;
 }

@@ -31,7 +31,7 @@ export function PlaybackBar() {
   const progress = replayProgress(currentTime);
 
   return (
-    <footer className="shrink-0 border-t border-line bg-surface pb-[env(safe-area-inset-bottom)]">
+    <footer className="shrink-0 border-t border-line bg-surface md:pb-[env(safe-area-inset-bottom)]">
       <div className="flex flex-wrap items-center gap-x-3 gap-y-2 px-3 py-2 md:flex-nowrap md:gap-x-4 md:px-4 md:py-2.5">
         <div className="order-1 flex w-full flex-col gap-1.5 md:order-3 md:min-w-0 md:flex-1 md:flex-row md:items-center md:gap-4">
           <VirtualClock time={currentTime} progress={progress} className="md:order-2" />
@@ -55,7 +55,7 @@ export function PlaybackBar() {
           <IconButton label="Step forward" onClick={stepForward} disabled={atEnd}>
             <StepForward size={18} />
           </IconButton>
-          <IconButton label="Restart replay" onClick={reset}>
+          <IconButton label="Back to session start" onClick={reset}>
             <RotateCcw size={17} />
           </IconButton>
         </div>

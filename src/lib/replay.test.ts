@@ -4,6 +4,7 @@ import { TIMEFRAMES, TIMEFRAME_SECONDS, type Candle } from '@/domain/market';
 import {
   aggregate,
   bucketIndexAt,
+  bucketIndexByTime,
   buildTimeframeIndex,
   candleUpdates,
   latestCandle,
@@ -94,6 +95,12 @@ describe('replay', () => {
         expect(state).toEqual(visibleCandles(m1, index, to));
       }
     }
+  });
+
+  it('finds a bucket by its open time', () => {
+    const index = buildTimeframeIndex(m1, '1H');
+    expect(bucketIndexByTime(index, index.buckets[7].time)).toBe(7);
+    expect(bucketIndexByTime(index, index.buckets[7].time + 1)).toBe(-1);
   });
 
   it('aggregating a full bucket yields the bucket extremes', () => {

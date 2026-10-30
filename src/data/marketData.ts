@@ -6,6 +6,7 @@ export const SYMBOL: SymbolInfo = {
   description: 'Euro / US Dollar',
   pricePrecision: 5,
   pipSize: 0.0001,
+  contractSize: 100_000,
 };
 
 /**
@@ -27,8 +28,12 @@ export const LAST_INDEX = M1_CANDLES.length - 1;
 /** Replay begins on the Monday of week 3 at 07:00 UTC (London open) with 10 days of history behind it. */
 export const REPLAY_START_INDEX = 10 * 1440 + 7 * 60;
 
+/** First time a new session opens at. */
+export const DEFAULT_START_TIME: UnixSeconds = M1_CANDLES[REPLAY_START_INDEX].time;
+
+/** The whole dataset is navigable: users can jump to any candle. */
 export const REPLAY_RANGE: TimeRange = {
-  from: M1_CANDLES[REPLAY_START_INDEX].time,
+  from: M1_CANDLES[0].time,
   to: M1_CANDLES[LAST_INDEX].time,
 };
 
@@ -44,10 +49,12 @@ export function indexAtOrBefore(time: UnixSeconds): number {
   return low;
 }
 
-/** 0 → replay start, 1 → last candle. Index-based so weekend gaps don't skew it. */
+/** Time of the candle the clock lands on for any requested time (clamped to the data). */
+export function snapToCandleTime(time: UnixSeconds): UnixSeconds {
+  return M1_CANDLES[indexAtOrBefore(time)].time;
+}
+
+/** 0 → first candle, 1 → last candle. Index-based so weekend gaps don't skew it. */
 export function replayProgress(time: UnixSeconds): number {
-  const span = LAST_INDEX - REPLAY_START_INDEX;
-  if (span <= 0) return 1;
-  const progress = (indexAtOrBefore(time) - REPLAY_START_INDEX) / span;
-  return Math.min(1, Math.max(0, progress));
+  return LAST_INDEX <= 0 ? 1 : indexAtOrBefore(time) / LAST_INDEX;
 }
