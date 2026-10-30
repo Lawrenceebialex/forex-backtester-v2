@@ -1,51 +1,29 @@
-import {
-  ColorType,
-  CrosshairMode,
-  LineStyle,
-  type CandlestickSeriesPartialOptions,
-  type ChartOptions,
-  type DeepPartial,
-} from 'lightweight-charts';
 import type { CandleColors } from '@/domain/candleColors';
 import { readCssColor } from './cssColor';
 
 export const CHART_FONT = '"JetBrains Mono Variable", ui-monospace, SFMono-Regular, Menlo, monospace';
 
-/** Chart chrome (background, grid, axes, crosshair) taken from the active theme's CSS variables. */
-export function chartThemeOptions(): DeepPartial<ChartOptions> {
-  const grid = readCssColor('--chart-grid');
-  const crosshair = {
-    color: readCssColor('--chart-crosshair'),
-    labelBackgroundColor: readCssColor('--chart-label'),
-    width: 1 as const,
-    style: LineStyle.Dashed,
-  };
-  const border = readCssColor('--line');
-
+/** Chart chrome colors from the active theme CSS variables (custom canvas chart). */
+export function chartThemeColors() {
   return {
-    layout: {
-      background: { type: ColorType.Solid, color: readCssColor('--chart-bg') },
-      textColor: readCssColor('--chart-text'),
-      fontFamily: CHART_FONT,
-      fontSize: 11,
-    },
-    grid: { vertLines: { color: grid }, horzLines: { color: grid } },
-    crosshair: { mode: CrosshairMode.Normal, vertLine: crosshair, horzLine: crosshair },
-    rightPriceScale: { borderColor: border },
-    timeScale: { borderColor: border },
+    background: readCssColor('--chart-bg'),
+    text: readCssColor('--chart-text'),
+    grid: readCssColor('--chart-grid'),
+    crosshair: readCssColor('--chart-crosshair'),
+    label: readCssColor('--chart-label'),
+    border: readCssColor('--line'),
+    fontFamily: CHART_FONT,
   };
 }
 
-/** Maps the user's candle color settings onto the series. */
-export function candleSeriesOptions(colors: CandleColors): CandlestickSeriesPartialOptions {
+/** Maps user candle color settings for the custom canvas series. */
+export function candleSeriesColors(colors: CandleColors) {
   return {
-    upColor: colors.upBody,
-    downColor: colors.downBody,
-    wickUpColor: colors.upWick,
-    wickDownColor: colors.downWick,
-    borderUpColor: colors.upBorder,
-    borderDownColor: colors.downBorder,
-    borderVisible: true,
-    wickVisible: true,
+    upBody: colors.upBody,
+    downBody: colors.downBody,
+    upWick: colors.upWick,
+    downWick: colors.downWick,
+    upBorder: colors.upBorder,
+    downBorder: colors.downBorder,
   };
 }
