@@ -1,10 +1,20 @@
-/** Public R2 base URL for historical OHLC JSON. */
+/** Public R2 base URL (server-side / curl only — browsers use the Pages proxy). */
 export const R2_BASE = 'https://pub-bae06cc5db21418c9699a28c5de315d1.r2.dev';
 
 export type R2Pair = 'EURUSD' | 'USDJPY';
 export type R2Timeframe = '1m' | '5m' | '15m' | '1h' | '4h' | '1d';
 
+/**
+ * Browser-safe URL. Goes through Cloudflare Pages Function so missing R2 CORS
+ * headers do not block the fetch.
+ */
 export function r2Url(pair: R2Pair, tf: R2Timeframe): string {
+  // Same-origin proxy — works on pages.dev and custom domains.
+  return `/api/ohlc/${pair}/${tf}`;
+}
+
+/** Direct R2 URL (for server-side tools / debugging only). */
+export function r2DirectUrl(pair: R2Pair, tf: R2Timeframe): string {
   return `${R2_BASE}/${pair}/${tf}.json`;
 }
 
