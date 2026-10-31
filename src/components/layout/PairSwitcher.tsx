@@ -1,7 +1,5 @@
 import { useState } from 'react';
 import { ACTIVE_PAIR, switchPair, type PairId } from '@/data/marketData';
-import { usePlaybackStore } from '@/stores/playbackStore';
-import { useTradingStore } from '@/stores/tradingStore';
 import { cn } from '@/lib/cn';
 
 const PAIRS: { id: PairId; label: string }[] = [
@@ -9,7 +7,7 @@ const PAIRS: { id: PairId; label: string }[] = [
   { id: 'USDJPY', label: 'USDJPY' },
 ];
 
-/** Switch the active symbol and reload history from R2. */
+/** Switch the active symbol and reload history from R2 (via proxy). */
 export function PairSwitcher() {
   const [pair, setPair] = useState<PairId>(ACTIVE_PAIR);
   const [busy, setBusy] = useState(false);
@@ -18,12 +16,15 @@ export function PairSwitcher() {
     if (next === pair || busy) return;
     setBusy(true);
     try {
+      // Clear stale playback clock so we do not stick on old mock times.
+      try {
+        localStorage.removeItem('fb-playback');
+      } catch {
+        /* ignore */
+      }
       await switchPair(next);
       setPair(next);
-      // Reset replay clock to the new dataset's default start.
-      usePlaybackStore.getState().reset();
-      useTradingStore.getState().resetAccount();
-      // Force a full page data refresh path for modules that captured candle refs.
+      // Hard reload so every store/chart picks up the new candle array.
       window.location.reload();
     } catch (err) {
       console.error(err);
@@ -46,7 +47,7 @@ export function PairSwitcher() {
             busy && 'opacity-60',
           )}
         >
-          {label}
+          {busy && pair !== id ? '…' : label}
         </button>
       ))}
     </div>
