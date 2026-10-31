@@ -1,6 +1,7 @@
 import type { Candle, SymbolInfo, TimeRange, UnixSeconds } from '@/domain/market';
 import { generateMockM1 } from './mockCandles';
 import { loadR2Candles } from './loadR2Candles';
+import type { R2Timeframe } from './r2Config';
 
 export type PairId = 'EURUSD' | 'USDJPY';
 
@@ -25,13 +26,17 @@ export const SYMBOLS: Record<PairId, SymbolInfo> = {
 export let SYMBOL: SymbolInfo = SYMBOLS.EURUSD;
 export let ACTIVE_PAIR: PairId = 'EURUSD';
 
-/** Base resolution of the loaded series (R2 1h until true 1m is fixed). */
-export let BASE_SECONDS = 60;
+/** Base resolution of the loaded series (seconds). */
+export let BASE_SECONDS = 900;
+
+/** Preferred R2 timeframe: 15m is rich enough and still small (~5–6 MB). */
+const PREFERRED_TF: R2Timeframe = '15m';
+const PREFERRED_SECONDS = 900;
 
 const mock = generateMockM1({
   startTime: Date.UTC(2024, 0, 2) / 1000,
-  tradingDays: 30,
-  startPrice: 1.085,
+  tradingDays: 10,
+  startPrice: 1.104,
   seed: 20240102,
 });
 
@@ -80,8 +85,12 @@ function applyCandles(next: Candle[], pair: PairId, baseSeconds: number) {
   M1_CANDLES = candles;
   LAST_INDEX = Math.max(0, candles.length - 1);
   BASE_SECONDS = baseSeconds;
-  // Start near the beginning so the full history is reachable via play / jump.
-  REPLAY_START_INDEX = Math.min(24, Math.floor(LAST_INDEX * 0.02));
+  // Start ~25% into history so the chart already shows many past candles
+  // (future bars stay hidden until play advances).
+  REPLAY_START_INDEX = Math.min(
+    Math.max(200, Math.floor(LAST_INDEX * 0.25)),
+    Math.max(0, LAST_INDEX - 50),
+  );
   DEFAULT_START_TIME = candles[REPLAY_START_INDEX].time;
   REPLAY_RANGE = { from: candles[0].time, to: candles[LAST_INDEX].time };
   ACTIVE_PAIR = pair;
@@ -93,20 +102,28 @@ function applyCandles(next: Candle[], pair: PairId, baseSeconds: number) {
 }
 
 /**
- * Load real history from R2.
- * Uses 1h files only (small, fast). Does NOT expand to synthetic 1m — that froze phones.
- * Broken timestamps are repaired in loadR2Candles.
+ * Load real history from R2 via the Pages /api/ohlc proxy (CORS-safe).
+ * Uses 15m bars by default. Falls back to 1h if 15m fails.
  */
 export async function bootstrapMarketData(pair: PairId = 'EURUSD'): Promise<void> {
   loading = true;
+  dataError = null;
   notify();
   try {
-    const hourly = await loadR2Candles(pair, '1h');
-    applyCandles(hourly, pair, 3600);
-    console.info(`[data] Loaded ${pair}: ${hourly.length} hourly bars from R2`);
+    let bars: Candle[];
+    let seconds = PREFERRED_SECONDS;
+    try {
+      bars = await loadR2Candles(pair, PREFERRED_TF);
+    } catch (firstErr) {
+      console.warn('[data] 15m failed, trying 1h', firstErr);
+      bars = await loadR2Candles(pair, '1h');
+      seconds = 3600;
+    }
+    applyCandles(bars, pair, seconds);
+    console.info(`[data] Loaded ${pair}: ${bars.length} bars (base ${seconds}s) from R2`);
   } catch (err) {
     dataError = err instanceof Error ? err.message : String(err);
-    console.error('[data] R2 load failed, keeping current candles', err);
+    console.error('[data] R2 load failed, keeping mock candles', err);
     loading = false;
     dataReady = candles.length > 0;
     notify();
