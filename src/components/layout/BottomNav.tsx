@@ -1,36 +1,33 @@
 import { cn } from '@/lib/cn';
 import { useUiStore } from '@/stores/uiStore';
-import { NAV_ITEMS } from './navItems';
+import { MOBILE_NAV } from './navItems';
 
-/** Thumb-reach tab bar for phones; respects the home-indicator safe area. */
 export function BottomNav() {
-  const view = useUiStore((state) => state.view);
-  const setView = useUiStore((state) => state.setView);
+  const view = useUiStore((s) => s.view);
+  const setView = useUiStore((s) => s.setView);
 
   return (
-    <nav aria-label="Main" className="shrink-0 border-t border-line bg-surface pb-[env(safe-area-inset-bottom)] md:hidden">
-      <ul className="grid grid-cols-5">
-        {NAV_ITEMS.map(({ id, shortLabel, label, icon: Icon }) => {
-          const active = view === id;
-          return (
-            <li key={id}>
-              <button
-                type="button"
-                aria-label={label}
-                aria-current={active ? 'page' : undefined}
-                onClick={() => setView(id)}
-                className={cn(
-                  'flex h-14 w-full flex-col items-center justify-center gap-1 text-[10px] font-medium transition-colors active:bg-overlay',
-                  active ? 'text-accent' : 'text-ink-subtle',
-                )}
-              >
-                <Icon size={20} strokeWidth={active ? 2.25 : 1.75} />
-                {shortLabel}
-              </button>
-            </li>
-          );
-        })}
-      </ul>
+    <nav
+      className="flex shrink-0 border-t border-line bg-surface pb-[env(safe-area-inset-bottom)] lg:hidden"
+      aria-label="Primary"
+    >
+      {MOBILE_NAV.map(({ id, shortLabel, icon: Icon }) => {
+        const active = view === id || (id === 'analytics' && view === 'comparison');
+        return (
+          <button
+            key={id}
+            type="button"
+            onClick={() => setView(id)}
+            className={cn(
+              'flex flex-1 flex-col items-center gap-0.5 py-2 text-[10px] font-medium',
+              active ? 'text-accent' : 'text-ink-subtle',
+            )}
+          >
+            <Icon size={18} />
+            {shortLabel}
+          </button>
+        );
+      })}
     </nav>
   );
 }
