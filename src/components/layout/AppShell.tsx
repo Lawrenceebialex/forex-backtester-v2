@@ -1,11 +1,12 @@
 import { useEffect } from 'react';
+import { AnalyticsView } from '@/components/analytics/AnalyticsView';
 import { ChartArea } from '@/components/chart/ChartArea';
 import { ChallengeView } from '@/components/challenge/ChallengeView';
 import { ComparisonView } from '@/components/comparison/ComparisonView';
 import { DashboardView } from '@/components/dashboard/DashboardView';
 import { NewBacktestView } from '@/components/backtests/NewBacktestView';
 import { MyBacktestsView } from '@/components/backtests/MyBacktestsView';
-import { PerformanceView } from '@/components/performance/PerformanceView';
+import { TradeJournalView } from '@/components/journal/TradeJournalView';
 import { PlaybackBar } from '@/components/playback/PlaybackBar';
 import { StrategiesView } from '@/components/strategies/StrategiesView';
 import { SettingsView } from '@/components/settings/SettingsView';
@@ -17,12 +18,6 @@ import { BottomNav } from './BottomNav';
 import { MobileMenuButton, Sidebar } from './Sidebar';
 import { WorkspaceHeader } from './WorkspaceHeader';
 
-/**
- * Product shell (Parts 2–3):
- * - Persistent sidebar IA on desktop
- * - Dashboard home (not chart)
- * - Workspace keeps chart + trade + replay engines unchanged
- */
 export function AppShell() {
   const view = useUiStore((state) => state.view);
   const isDocked = useMediaQuery(DESKTOP_QUERY);
@@ -61,7 +56,8 @@ export function AppShell() {
             {view === 'new-backtest' && <NewBacktestView />}
             {view === 'backtests' && <MyBacktestsView />}
             {view === 'strategies' && <StrategiesView />}
-            {view === 'analytics' && <PerformanceView />}
+            {view === 'analytics' && <AnalyticsView />}
+            {view === 'journal' && <TradeJournalView />}
             {view === 'settings' && <SettingsView />}
             {view === 'comparison' && <ComparisonView />}
             {view === 'challenge' && <ChallengeView />}
