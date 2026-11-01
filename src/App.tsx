@@ -13,6 +13,7 @@ import {
 } from '@/data/marketData';
 import { usePlaybackEngine } from '@/hooks/usePlaybackEngine';
 import { usePropEngine } from '@/hooks/usePropEngine';
+import { useSessionSync } from '@/hooks/useSessionSync';
 import { useShortcuts } from '@/hooks/useShortcuts';
 import { useTradingEngine } from '@/hooks/useTradingEngine';
 import { useAuthStore } from '@/stores/authStore';
@@ -40,6 +41,7 @@ export default function App() {
 
   usePlaybackEngine();
   useTradingEngine();
+  useSessionSync();
   usePropEngine();
   useShortcuts();
 
