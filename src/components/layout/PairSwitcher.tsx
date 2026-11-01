@@ -7,7 +7,7 @@ const PAIRS: { id: PairId; label: string }[] = [
   { id: 'USDJPY', label: 'USDJPY' },
 ];
 
-/** Switch the active symbol and reload history from R2 (via proxy). */
+/** Switch the active symbol and reload history from R2. */
 export function PairSwitcher() {
   const [pair, setPair] = useState<PairId>(ACTIVE_PAIR);
   const [busy, setBusy] = useState(false);
@@ -16,7 +16,6 @@ export function PairSwitcher() {
     if (next === pair || busy) return;
     setBusy(true);
     try {
-      // Clear stale playback clock so we do not stick on old mock times.
       try {
         localStorage.removeItem('fb-playback');
       } catch {
@@ -24,7 +23,6 @@ export function PairSwitcher() {
       }
       await switchPair(next);
       setPair(next);
-      // Hard reload so every store/chart picks up the new candle array.
       window.location.reload();
     } catch (err) {
       console.error(err);

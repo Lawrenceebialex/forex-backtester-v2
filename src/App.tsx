@@ -17,9 +17,13 @@ import { usePlaybackStore } from '@/stores/playbackStore';
 
 export default function App() {
   useEffect(() => {
+    // Drop any clock saved while we still had mock/broken 2024-only data.
+    try {
+      localStorage.removeItem('fb-playback');
+    } catch {
+      /* ignore */
+    }
     void bootstrapMarketData('EURUSD').then(() => {
-      // Module-level candle arrays and DEFAULT_START_TIME are updated by bootstrap.
-      // Force the virtual clock onto the real R2 session (not the mock seed date).
       usePlaybackStore.setState({
         currentTime: DEFAULT_START_TIME,
         sessionRange: { ...REPLAY_RANGE },
