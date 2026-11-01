@@ -4,7 +4,10 @@ import { IconButton } from '@/components/ui/IconButton';
 import { PairSwitcher } from './PairSwitcher';
 import { useGradual } from '@/hooks/useEasedNumber';
 import { cn } from '@/lib/cn';
-import { formatSignedMoney, pnlTone } from '@/lib/format';
+import { formatMoney, formatSignedMoney, pnlTone } from '@/lib/format';
+import { formatVirtualTime } from '@/lib/formatTime';
+import { useBacktestStore } from '@/stores/backtestStore';
+import { usePlaybackStore } from '@/stores/playbackStore';
 import { useTradingStore } from '@/stores/tradingStore';
 import { useUiStore } from '@/stores/uiStore';
 import { MobileMenuButton } from './Sidebar';
@@ -17,9 +20,15 @@ export function WorkspaceHeader() {
   const openSettings = useUiStore((s) => s.openSettings);
   const openPositions = useTradingStore((s) => s.positions.length);
   const floatingPnl = useGradual(useTradingStore((s) => s.floatingPnl));
+  const balance = useTradingStore((s) => s.balance);
+  const equity = useTradingStore((s) => s.equity);
+  const currentTime = usePlaybackStore((s) => s.currentTime);
+  const timeframe = usePlaybackStore((s) => s.timeframe);
+  const activeId = useBacktestStore((s) => s.activeSessionId);
+  const session = useBacktestStore((s) => s.sessions.find((x) => x.id === activeId));
 
   return (
-    <header className="flex h-12 shrink-0 items-center gap-2 border-b border-line bg-surface px-2 pt-[env(safe-area-inset-top)] md:px-3">
+    <header className="flex h-12 shrink-0 items-center gap-2 border-b border-line bg-surface px-2 pt-[env(safe-area-inset-top)] md:gap-3 md:px-3">
       <MobileMenuButton />
       <button
         type="button"
@@ -27,18 +36,35 @@ export function WorkspaceHeader() {
         className="inline-flex h-8 items-center gap-1 rounded-md px-2 text-xs font-medium text-ink-muted hover:bg-overlay hover:text-ink"
       >
         <ArrowLeft size={14} />
-        <span className="hidden sm:inline">Dashboard</span>
+        <span className="hidden sm:inline">Exit</span>
       </button>
+
+      <div className="min-w-0 flex-1">
+        <p className="truncate text-[12px] font-semibold text-ink">
+          {session?.config.name ?? 'Chart session'}
+          <span className="ml-2 font-normal text-ink-subtle">
+            {session?.config.instrument ?? ''} · {timeframe}
+          </span>
+        </p>
+        <p className="truncate font-mono text-[11px] tabular-nums text-ink-muted">
+          {formatVirtualTime(currentTime)} UTC
+          <span className="mx-1.5 text-ink-subtle">·</span>
+          Bal {formatMoney(balance)}
+          <span className="mx-1.5 text-ink-subtle">·</span>
+          Eq {formatMoney(equity)}
+        </p>
+      </div>
+
       <PairSwitcher />
-      <span className="hidden text-[12px] text-ink-subtle md:inline">Chart session</span>
-      <div className="ml-auto flex items-center gap-0.5">
+
+      <div className="flex items-center gap-0.5">
         <ChallengeChip />
         <ThemeToggle />
         <IconButton label="Settings" onClick={() => openSettings()}>
           <Settings size={18} />
         </IconButton>
         {openPositions > 0 && (
-          <span className={cn('ml-1 font-mono text-xs font-medium tabular-nums', pnlTone(floatingPnl))}>
+          <span className={cn('ml-1 hidden font-mono text-xs font-medium tabular-nums sm:inline', pnlTone(floatingPnl))}>
             {formatSignedMoney(floatingPnl)}
           </span>
         )}
