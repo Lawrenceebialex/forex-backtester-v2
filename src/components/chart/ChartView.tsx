@@ -1,10 +1,17 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { ChevronsRight, Scissors } from 'lucide-react';
-import { CandleChart } from '@/chart/CandleChart';
+import { DrawingToolbar } from '@/components/drawing/DrawingToolbar';
+import { TextPrompt } from '@/components/drawing/TextPrompt';
+import { DRAWING_TOOLS } from '@/components/drawing/tools';
+import { CandleChart, type NewsFocus } from '@/chart/CandleChart';
 import { readChartTheme } from '@/chart/theme';
-import { M1_CANDLES, SYMBOL, indexAtOrBefore } from '@/data/marketData';
+import { M1_CANDLES, MARKET_DATA_STATUS, SYMBOL, indexAtOrBefore } from '@/data/marketData';
+import { NEWS_EVENTS, countReleased } from '@/data/newsEvents';
+import type { ChartPoint } from '@/domain/drawings';
 import { TIMEFRAME_SECONDS, type Candle } from '@/domain/market';
+import { readCssColor } from '@/lib/cssColor';
 import { formatVirtualTime } from '@/lib/formatTime';
+import { groupNewsMarkers } from '@/lib/newsMarkers';
 import {
   bucketIndexAt,
   bucketIndexByTime,
@@ -14,11 +21,15 @@ import {
   visibleCandles,
 } from '@/lib/replay';
 import { useCandleColorsStore } from '@/stores/candleColorsStore';
+import { useDrawingStore } from '@/stores/drawingStore';
+import { useNewsStore } from '@/stores/newsStore';
 import { usePlaybackStore } from '@/stores/playbackStore';
 import { useThemeStore } from '@/stores/themeStore';
 import { useToastStore } from '@/stores/toastStore';
 import { useUiStore } from '@/stores/uiStore';
+import { NewsCard } from '@/components/news/NewsCard';
 import { ChartLegend, sameOhlc, type Ohlc } from './ChartLegend';
+import { ChartSkeleton } from './ChartSkeleton';
 import { usePositionOverlays } from './usePositionOverlays';
 
 /** Above this many newly opened candles in one tick, redraw with setData instead of update(). */
@@ -30,13 +41,23 @@ export function ChartView() {
   const [hovered, setHovered] = useState<Ohlc | null>(null);
   const [atLatest, setAtLatest] = useState(true);
   const [lockedCandle, setLockedCandle] = useState<Candle | null>(null);
+  const [newsFocus, setNewsFocus] = useState<NewsFocus | null>(null);
+  const [textRequest, setTextRequest] = useState<{ point: ChartPoint; x: number; y: number } | null>(null);
 
   const cutMode = useUiStore((state) => state.cutMode);
   const setCutMode = useUiStore((state) => state.setCutMode);
   const theme = useThemeStore((state) => state.theme);
   const colors = useCandleColorsStore((state) => state.colors);
+  const tool = useDrawingStore((state) => state.tool);
+  const drawColor = useDrawingStore((state) => state.color);
+  const allDrawings = useDrawingStore((state) => state.drawings);
+  const drawings = useMemo(() => allDrawings.filter((drawing) => drawing.symbol === SYMBOL.symbol), [allDrawings]);
   const timeframe = usePlaybackStore((state) => state.timeframe);
   const currentTime = usePlaybackStore((state) => state.currentTime);
+
+  const newsVisible = useNewsStore((state) => state.visible);
+  const minImpact = useNewsStore((state) => state.minImpact);
+  const releasedNews = usePlaybackStore((state) => countReleased(NEWS_EVENTS, state.currentTime));
 
   const timeframeIndex = useMemo(() => buildTimeframeIndex(M1_CANDLES, timeframe), [timeframe]);
   const latest = useMemo(
@@ -61,6 +82,12 @@ export function ChartView() {
         },
         onCutChange: setLockedCandle,
         onLatestVisibleChange: setAtLatest,
+        onNewsFocus: setNewsFocus,
+        onDrawingCreate: (drawing) => useDrawingStore.getState().add(drawing),
+        onDrawingUpdate: (drawing) => useDrawingStore.getState().update(drawing),
+        onDrawingErase: (id) => useDrawingStore.getState().remove(id),
+        onDrawingSelect: (id) => useDrawingStore.getState().select(id),
+        onTextRequest: setTextRequest,
         onVisibleRangeChange: (range) => usePlaybackStore.getState().setVisibleRange(range),
       },
     );
@@ -76,6 +103,32 @@ export function ChartView() {
       chartRef.current = null;
     };
   }, []);
+
+  // News: only events that have already happened at the replay clock are shown.
+  const newsMarkers = useMemo(() => {
+    if (!newsVisible) return [];
+    const now = usePlaybackStore.getState().currentTime;
+    const shown = NEWS_EVENTS.filter((event) => event.time <= now && (minImpact === 'medium' || event.impact === 'high'));
+    return groupNewsMarkers(shown, TIMEFRAME_SECONDS[timeframe], { high: readCssColor('--bear'), medium: readCssColor('--warn') });
+    // `releasedNews` changes exactly when the clock passes an event; `theme` refreshes the colors.
+  }, [newsVisible, minImpact, releasedNews, timeframe, theme]);
+
+  useEffect(() => {
+    chartRef.current?.setNewsMarkers(newsMarkers);
+    setNewsFocus(null);
+  }, [newsMarkers]);
+
+  // Drawings: the saved shapes, the active tool and its color.
+  useEffect(() => {
+    chartRef.current?.setDrawings(drawings);
+  }, [drawings]);
+  useEffect(() => {
+    chartRef.current?.setTool(tool);
+    setTextRequest(null);
+  }, [tool]);
+  useEffect(() => {
+    chartRef.current?.setDrawingColor(drawColor);
+  }, [drawColor]);
 
   // Entry markers and SL / TP lines for open positions.
   usePositionOverlays(chartRef);
@@ -150,6 +203,29 @@ export function ChartView() {
     <div className="relative min-h-0 flex-1 bg-chart">
       <div ref={containerRef} className="absolute inset-0" />
       <ChartLegend ohlc={hovered ?? latest} timeframe={timeframe} />
+      <DrawingToolbar />
+      {MARKET_DATA_STATUS !== 'ready' && <ChartSkeleton error={MARKET_DATA_STATUS === 'error'} />}
+
+      {tool !== 'cursor' && !cutMode && (
+        <p className="pointer-events-none absolute bottom-10 left-2 right-24 z-10 truncate rounded-lg bg-surface/90 px-3 py-1.5 text-xs text-ink-muted shadow-overlay sm:right-auto sm:max-w-md">
+          <span className="font-medium text-ink">{DRAWING_TOOLS.find((item) => item.id === tool)?.label}.</span> {DRAWING_TOOLS.find((item) => item.id === tool)?.hint} <span className="hidden sm:inline">Esc to stop.</span>
+        </p>
+      )}
+
+      {textRequest && (
+        <TextPrompt
+          x={textRequest.x}
+          y={textRequest.y}
+          containerWidth={containerRef.current?.clientWidth ?? 600}
+          onCancel={() => setTextRequest(null)}
+          onSubmit={(text) => {
+            useDrawingStore.getState().add({ kind: 'text', color: drawColor, a: textRequest.point, text });
+            setTextRequest(null);
+          }}
+        />
+      )}
+
+      {newsFocus && <NewsCard ids={newsFocus.ids} x={newsFocus.x} y={newsFocus.y} containerWidth={containerRef.current?.clientWidth ?? 600} />}
 
       {!atLatest && !cutMode && (
         <button

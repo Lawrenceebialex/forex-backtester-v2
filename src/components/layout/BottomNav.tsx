@@ -9,7 +9,7 @@ export function BottomNav() {
 
   return (
     <nav aria-label="Main" className="shrink-0 border-t border-line bg-surface pb-[env(safe-area-inset-bottom)] md:hidden">
-      <ul className="grid grid-cols-4">
+      <ul className="grid grid-cols-5">
         {NAV_ITEMS.map(({ id, shortLabel, label, icon: Icon }) => {
           const active = view === id;
           return (

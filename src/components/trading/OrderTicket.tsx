@@ -1,9 +1,10 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { SYMBOL } from '@/data/marketData';
 import { LOT_LIMITS, type Side, type StopInput, type StopUnit } from '@/domain/trading';
 import { cn } from '@/lib/cn';
 import { formatMoney } from '@/lib/format';
 import { marginFor, pipValue } from '@/lib/trading';
+import { usePreferencesStore } from '@/stores/preferencesStore';
 import { useStrategyStore } from '@/stores/strategyStore';
 import { useTradingStore } from '@/stores/tradingStore';
 import { NumberStepper } from '@/components/ui/NumberStepper';
@@ -77,7 +78,9 @@ export function OrderTicket() {
   const activeId = useStrategyStore((state) => state.activeId);
   const setActive = useStrategyStore((state) => state.setActive);
 
-  const [lots, setLots] = useState(0.1);
+  const defaultLots = usePreferencesStore((state) => state.defaultLots);
+  const [lots, setLots] = useState(defaultLots);
+  useEffect(() => setLots(defaultLots), [defaultLots]);
   const [unit, setUnit] = useState<StopUnit>('pips');
   const [stopLoss, setStopLoss] = useState('');
   const [takeProfit, setTakeProfit] = useState('');

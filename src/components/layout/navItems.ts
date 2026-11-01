@@ -1,4 +1,4 @@
-import { Activity, Gauge, GitCompare, Layers, type LucideIcon } from 'lucide-react';
+import { Activity, Gauge, GitCompare, Layers, ShieldCheck, type LucideIcon } from 'lucide-react';
 import type { AppView } from '@/stores/uiStore';
 
 export interface NavItem {
@@ -14,4 +14,5 @@ export const NAV_ITEMS: readonly NavItem[] = [
   { id: 'strategies', label: 'Strategies', shortLabel: 'Strategies', icon: Layers },
   { id: 'performance', label: 'Performance', shortLabel: 'Stats', icon: Gauge },
   { id: 'comparison', label: 'Comparison', shortLabel: 'Compare', icon: GitCompare },
+  { id: 'challenge', label: 'Challenge', shortLabel: 'Challenge', icon: ShieldCheck },
 ];

@@ -1,7 +1,9 @@
 import type { CandleColors } from '@/domain/candleColors';
+import type { ChartPoint, Drawing, DrawingKind, DrawingTool, NewDrawing } from '@/domain/drawings';
 import type { Candle, TimeRange, UnixSeconds } from '@/domain/market';
 import { clamp } from '@/lib/math';
 import { niceTicks } from '@/lib/ticks';
+import { drawDrawing, drawMeasure, hitTest, movedDrawing, type DrawingView, type HitPart } from './drawingLayer';
 import type { ChartTheme } from './theme';
 import { computeTimeTicks, formatCrosshairTime, pickTimeStep } from './timeAxis';
 
@@ -25,6 +27,22 @@ export interface ChartOverlays {
   markers: readonly OverlayMarker[];
 }
 
+/** A news event pinned to a candle (events on the same candle share one marker). */
+export interface NewsMarker {
+  /** Open time of the candle the event falls on (on the current timeframe). */
+  time: UnixSeconds;
+  label: string;
+  color: string;
+  ids: string[];
+}
+
+/** Where a news marker sits on screen (pixels inside the chart), for anchoring a card. */
+export interface NewsFocus {
+  ids: string[];
+  x: number;
+  y: number;
+}
+
 export interface ChartConfig {
   pricePrecision: number;
   pipSize: number;
@@ -38,6 +56,16 @@ export interface ChartCallbacks {
   /** Whether the newest candle is on screen (drives a "Latest" button). */
   onLatestVisibleChange?: (visible: boolean) => void;
   onVisibleRangeChange?: (range: TimeRange | null) => void;
+  /** A news marker was hovered (mouse) or tapped (touch); null when it no longer is. */
+  onNewsFocus?: (focus: NewsFocus | null) => void;
+  /** The user finished drawing a shape. */
+  onDrawingCreate?: (drawing: NewDrawing) => void;
+  /** A drawing was moved or reshaped (called once, when the drag ends). */
+  onDrawingUpdate?: (drawing: Drawing) => void;
+  onDrawingErase?: (id: string) => void;
+  onDrawingSelect?: (id: string | null) => void;
+  /** The text tool was clicked: the host shows an input at (x, y) and creates the drawing. */
+  onTextRequest?: (request: { point: ChartPoint; x: number; y: number }) => void;
 }
 
 interface Point {
@@ -47,7 +75,9 @@ interface Point {
 
 type Gesture =
   | { kind: 'pan'; startX: number; startEdge: number; moved: boolean; samples: Array<{ x: number; t: number }> }
-  | { kind: 'pinch'; startDistance: number; startSpacing: number; anchorIndex: number; anchorX: number };
+  | { kind: 'pinch'; startDistance: number; startSpacing: number; anchorIndex: number; anchorX: number }
+  | { kind: 'draw'; start: ChartPoint; startPx: Point; moved: boolean; fromPending: boolean }
+  | { kind: 'drag'; origin: Drawing; part: HitPart; grab: ChartPoint; startPx: Point; moved: boolean };
 
 const MONO = '11px "JetBrains Mono Variable", ui-monospace, SFMono-Regular, Menlo, monospace';
 const MONO_BOLD = '600 11px "JetBrains Mono Variable", ui-monospace, SFMono-Regular, Menlo, monospace';
@@ -93,6 +123,19 @@ export class CandleChart {
   private timeframeSeconds = 60;
   private watermark = '';
   private overlays: ChartOverlays = { lines: [], markers: [] };
+  private news: NewsMarker[] = [];
+  private newsFocusKey = '';
+
+  private drawings: Drawing[] = [];
+  private tool: DrawingTool = 'cursor';
+  private drawColor = '#3d70f2';
+  private selectedId: string | null = null;
+  /** First anchor placed by a tap, while waiting for the second tap. */
+  private pending: ChartPoint | null = null;
+  /** The shape being placed, shown as a preview. */
+  private draft: { a: ChartPoint; b: ChartPoint } | null = null;
+  /** The last finished measurement (not saved with the drawings). */
+  private measurement: { a: ChartPoint; b: ChartPoint } | null = null;
 
   private readonly pointers = new Map<number, Point>();
   private gesture: Gesture | null = null;
@@ -203,6 +246,38 @@ export class CandleChart {
 
   setOverlays(overlays: ChartOverlays): void {
     this.overlays = overlays;
+    this.requestDraw();
+  }
+
+  setNewsMarkers(markers: NewsMarker[]): void {
+    this.news = markers;
+    if (this.newsFocusKey && !markers.some((marker) => marker.ids.join(',') === this.newsFocusKey)) this.clearNewsFocus();
+    this.requestDraw();
+  }
+
+  setDrawings(drawings: Drawing[]): void {
+    this.drawings = drawings;
+    if (this.selectedId && !drawings.some((drawing) => drawing.id === this.selectedId)) this.select(null);
+    this.requestDraw();
+  }
+
+  setTool(tool: DrawingTool): void {
+    this.tool = tool;
+    this.cancelDrawing();
+    this.select(null);
+    this.canvas.style.cursor = 'crosshair';
+  }
+
+  setDrawingColor(color: string): void {
+    this.drawColor = color;
+    this.requestDraw();
+  }
+
+  /** Abandons a half-placed shape and clears the measurement. */
+  cancelDrawing(): void {
+    this.pending = null;
+    this.draft = null;
+    this.measurement = null;
     this.requestDraw();
   }
 
@@ -335,6 +410,7 @@ export class CandleChart {
 
   private zoomAt(x: number, factor: number): void {
     const plot = this.plot();
+    this.clearNewsFocus();
     const anchor = this.indexAt(x, plot.right);
     this.barSpacing = clamp(this.barSpacing * factor, MIN_SPACING, MAX_SPACING);
     this.rightEdge = anchor + (plot.right - x) / this.barSpacing;
@@ -357,8 +433,12 @@ export class CandleChart {
     this.velocity = 0;
 
     if (this.pointers.size === 1) {
-      this.gesture = { kind: 'pan', startX: point.x, startEdge: this.rightEdge, moved: false, samples: [{ x: point.x, t: event.timeStamp }] };
+      if (!this.beginDrawingGesture(point)) {
+        this.gesture = { kind: 'pan', startX: point.x, startEdge: this.rightEdge, moved: false, samples: [{ x: point.x, t: event.timeStamp }] };
+      }
     } else if (this.pointers.size === 2) {
+      this.draft = null;
+      this.pending = null;
       const [a, b] = [...this.pointers.values()];
       const midX = (a.x + b.x) / 2;
       this.gesture = {
@@ -378,11 +458,28 @@ export class CandleChart {
 
     if (this.pointers.has(event.pointerId)) this.pointers.set(event.pointerId, point);
 
+    if (gesture?.kind === 'draw') {
+      if (Math.hypot(point.x - gesture.startPx.x, point.y - gesture.startPx.y) > TAP_SLOP) gesture.moved = true;
+      this.draft = { a: gesture.start, b: this.chartPoint(point) };
+      this.requestDraw();
+      return;
+    }
+    if (gesture?.kind === 'drag') {
+      if (Math.hypot(point.x - gesture.startPx.x, point.y - gesture.startPx.y) > TAP_SLOP) gesture.moved = true;
+      if (gesture.moved) {
+        const updated = movedDrawing(gesture.origin, gesture.part, gesture.grab, this.chartPoint(point));
+        this.drawings = this.drawings.map((drawing) => (drawing.id === updated.id ? updated : drawing));
+        this.requestDraw();
+      }
+      return;
+    }
+
     if (gesture?.kind === 'pinch' && this.pointers.size >= 2) {
       const [a, b] = [...this.pointers.values()];
       const midX = (a.x + b.x) / 2;
       const distance = Math.max(1, Math.hypot(a.x - b.x, a.y - b.y));
       const plot = this.plot();
+      this.clearNewsFocus();
       this.barSpacing = clamp(gesture.startSpacing * (distance / gesture.startDistance), MIN_SPACING, MAX_SPACING);
       this.rightEdge = gesture.anchorIndex + (plot.right - midX) / this.barSpacing;
       this.clampEdge();
@@ -394,6 +491,7 @@ export class CandleChart {
       const dx = point.x - gesture.startX;
       if (!gesture.moved && Math.abs(dx) > TAP_SLOP) {
         gesture.moved = true;
+        this.clearNewsFocus();
         this.setHover(null);
         this.canvas.style.cursor = 'grabbing';
       }
@@ -407,7 +505,11 @@ export class CandleChart {
       return;
     }
 
-    if (event.pointerType === 'mouse') this.setHover(point);
+    if (event.pointerType === 'mouse') {
+      this.setHover(point);
+      this.updateCursor(point);
+      this.focusNews(point);
+    }
   };
 
   private readonly onPointerUp = (event: PointerEvent) => {
@@ -416,6 +518,18 @@ export class CandleChart {
     this.pointers.delete(event.pointerId);
     this.canvas.releasePointerCapture?.(event.pointerId);
     this.canvas.style.cursor = 'crosshair';
+
+    if (gesture?.kind === 'draw') {
+      this.gesture = null;
+      this.finishDrawGesture(gesture, point);
+      return;
+    }
+    if (gesture?.kind === 'drag') {
+      this.gesture = null;
+      const current = this.drawings.find((drawing) => drawing.id === gesture.origin.id);
+      if (gesture.moved && current) this.callbacks.onDrawingUpdate?.(current);
+      return;
+    }
 
     if (gesture?.kind === 'pan') {
       this.gesture = null;
@@ -442,13 +556,24 @@ export class CandleChart {
   };
 
   private readonly onPointerLeave = (event: PointerEvent) => {
-    if (event.pointerType === 'mouse' && !this.gesture) this.setHover(null);
+    if (event.pointerType === 'mouse' && !this.gesture) {
+      this.setHover(null);
+      this.clearNewsFocus();
+    }
   };
 
   private onTap(point: Point, pointerType: string): void {
     const plot = this.plot();
     if (point.x > plot.right || point.y > plot.bottom || this.candles.length === 0) return;
     const index = clamp(Math.round(this.indexAt(point.x, plot.right)), 0, this.candles.length - 1);
+
+    if (pointerType !== 'mouse' && !this.cutMode) {
+      // Touch: tapping a news marker opens its card, tapping it again (or elsewhere) closes it.
+      const hit = this.hitNews(point);
+      if (hit && hit.marker.ids.join(',') !== this.newsFocusKey) return this.focusNews(point);
+      if (this.newsFocusKey) this.clearNewsFocus();
+      if (hit) return;
+    }
 
     if (this.cutMode) {
       this.cutIndex = index;
@@ -485,22 +610,226 @@ export class CandleChart {
 
   private readonly onKeyDown = (event: KeyboardEvent) => {
     const plot = this.plot();
-    const handled = ['ArrowLeft', 'ArrowRight', '+', '=', '-', '_', 'Home', 'End'];
+    const handled = ['+', '=', '-', '_', 'Home', 'End'];
     if (!handled.includes(event.key)) return;
     event.preventDefault();
-    if (event.key === 'ArrowLeft') this.rightEdge -= 10;
-    else if (event.key === 'ArrowRight') this.rightEdge += 10;
-    else if (event.key === 'Home') this.rightEdge = Math.min(this.candles.length - 1, 5);
+    if (event.key === 'Home') this.rightEdge = Math.min(this.candles.length - 1, 5);
     else if (event.key === 'End') return this.scrollToLatest();
     else return this.zoomAt(plot.right - 1, event.key === '-' || event.key === '_' ? 0.85 : 1.18);
     this.clampEdge();
     this.requestDraw();
   };
 
+  // ───────────────────────────── drawings ─────────────────────────────
+
+  /** Fractional candle index of a market time (extrapolates beyond the data using the timeframe). */
+  private timeToIndex(time: UnixSeconds): number {
+    const count = this.candles.length;
+    if (count === 0) return 0;
+    const first = this.candles[0].time;
+    const last = this.candles[count - 1].time;
+    if (time <= first) return (time - first) / this.timeframeSeconds;
+    if (time >= last) return count - 1 + (time - last) / this.timeframeSeconds;
+    let low = 0;
+    let high = count - 1;
+    while (high - low > 1) {
+      const mid = (low + high) >> 1;
+      if (this.candles[mid].time <= time) low = mid;
+      else high = mid;
+    }
+    return low + (time - this.candles[low].time) / (this.candles[high].time - this.candles[low].time);
+  }
+
+  private indexToTime(index: number): UnixSeconds {
+    const count = this.candles.length;
+    if (count === 0) return 0;
+    if (index <= 0) return this.candles[0].time + index * this.timeframeSeconds;
+    if (index >= count - 1) return this.candles[count - 1].time + (index - (count - 1)) * this.timeframeSeconds;
+    const lower = Math.floor(index);
+    return this.candles[lower].time + (index - lower) * (this.candles[lower + 1].time - this.candles[lower].time);
+  }
+
+  /** A pointer position as a market point, snapped to the nearest candle in time. */
+  private chartPoint(point: Point): ChartPoint {
+    const plot = this.plot();
+    return { time: Math.round(this.indexToTime(Math.round(this.indexAt(point.x, plot.right)))), price: this.priceAt(point.y, plot.height) };
+  }
+
+  private drawingView(plot: ReturnType<CandleChart['plot']>): DrawingView {
+    return {
+      x: (time) => this.xOf(this.timeToIndex(time), plot.right),
+      y: (price) => this.yOf(price, plot.height),
+      plot: { left: 0, top: 0, right: plot.right, bottom: plot.bottom },
+      pipSize: this.config.pipSize,
+      precision: this.config.pricePrecision,
+      barsBetween: (from, to) => Math.round(this.timeToIndex(to) - this.timeToIndex(from)),
+    };
+  }
+
+  /** The top-most drawing under the pointer. */
+  private drawingAt(point: Point): { drawing: Drawing; part: HitPart } | null {
+    const view = this.drawingView(this.plot());
+    for (let i = this.drawings.length - 1; i >= 0; i--) {
+      const part = hitTest(this.drawings[i], view, point.x, point.y);
+      if (part) return { drawing: this.drawings[i], part };
+    }
+    return null;
+  }
+
+  private select(id: string | null): void {
+    if (id === this.selectedId) return;
+    this.selectedId = id;
+    this.callbacks.onDrawingSelect?.(id);
+    this.requestDraw();
+  }
+
+  /** Starts a drawing-related gesture if the active tool wants this press. Returns false to pan instead. */
+  private beginDrawingGesture(point: Point): boolean {
+    const plot = this.plot();
+    if (this.cutMode || point.x > plot.right || point.y > plot.bottom || this.candles.length === 0) return false;
+
+    if (this.tool === 'cursor') {
+      const hit = this.drawingAt(point);
+      if (!hit) {
+        this.select(null);
+        return false;
+      }
+      this.select(hit.drawing.id);
+      this.gesture = { kind: 'drag', origin: hit.drawing, part: hit.part, grab: this.chartPoint(point), startPx: point, moved: false };
+      return true;
+    }
+
+    const here = this.chartPoint(point);
+    switch (this.tool) {
+      case 'eraser': {
+        const hit = this.drawingAt(point);
+        if (hit) this.callbacks.onDrawingErase?.(hit.drawing.id);
+        return true;
+      }
+      case 'hline':
+      case 'vline':
+        this.callbacks.onDrawingCreate?.({ kind: this.tool, color: this.drawColor, a: here });
+        return true;
+      case 'text':
+        this.callbacks.onTextRequest?.({ point: here, x: point.x, y: point.y });
+        return true;
+      default: {
+        // Trend, ray, fib, rect, measure: press-drag-release, or tap the two corners one after the other.
+        const start = this.pending ?? here;
+        this.measurement = null;
+        this.gesture = { kind: 'draw', start, startPx: point, moved: false, fromPending: this.pending !== null };
+        this.draft = { a: start, b: here };
+        this.requestDraw();
+        return true;
+      }
+    }
+  }
+
+  private finishDrawGesture(gesture: Extract<Gesture, { kind: 'draw' }>, point: Point): void {
+    const end = this.chartPoint(point);
+    const moved = gesture.moved || Math.hypot(point.x - gesture.startPx.x, point.y - gesture.startPx.y) > TAP_SLOP;
+    if (gesture.fromPending || moved) {
+      this.pending = null;
+      this.draft = null;
+      if (gesture.start.time !== end.time || gesture.start.price !== end.price) {
+        if (this.tool === 'measure') this.measurement = { a: gesture.start, b: end };
+        else this.callbacks.onDrawingCreate?.({ kind: this.tool as DrawingKind, color: this.drawColor, a: gesture.start, b: end });
+      }
+    } else {
+      this.pending = gesture.start;
+      this.draft = { a: gesture.start, b: end };
+    }
+    this.requestDraw();
+  }
+
+  private updateCursor(point: Point): void {
+    const inside = point.x <= this.plot().right && point.y <= this.plot().bottom;
+    const hit = inside && (this.tool === 'eraser' || this.tool === 'cursor') ? this.drawingAt(point) : null;
+    this.canvas.style.cursor = hit ? (this.tool === 'eraser' ? 'pointer' : 'move') : 'crosshair';
+  }
+
+  private drawDrawingsLayer(plot: ReturnType<CandleChart['plot']>): void {
+    const view = this.drawingView(plot);
+    for (const drawing of this.drawings) drawDrawing(this.ctx, drawing, view, this.theme, { selected: drawing.id === this.selectedId });
+    if (this.draft && this.tool === 'measure') drawMeasure(this.ctx, this.draft.a, this.draft.b, view, this.theme);
+    else if (this.draft) {
+      const preview: Drawing = { id: 'draft', symbol: '', kind: this.tool as DrawingKind, color: this.drawColor, a: this.draft.a, b: this.draft.b };
+      drawDrawing(this.ctx, preview, view, this.theme, { preview: true });
+    } else if (this.measurement) drawMeasure(this.ctx, this.measurement.a, this.measurement.b, view, this.theme);
+  }
+
+  private hitNews(point: Point): { marker: NewsMarker; x: number } | null {
+    const plot = this.plot();
+    if (this.cutMode || point.x > plot.right || point.y > 34) return null;
+    let best: { marker: NewsMarker; x: number } | null = null;
+    let bestDistance = 11;
+    for (const marker of this.news) {
+      const index = this.indexOfTime(marker.time);
+      if (index < 0) continue;
+      const x = this.xOf(index, plot.right);
+      const distance = Math.abs(point.x - x);
+      if (distance <= bestDistance) {
+        best = { marker, x };
+        bestDistance = distance;
+      }
+    }
+    return best;
+  }
+
+  private focusNews(point: Point): void {
+    const hit = this.hitNews(point);
+    const key = hit ? hit.marker.ids.join(',') : '';
+    if (hit) this.canvas.style.cursor = 'pointer';
+    if (key === this.newsFocusKey) return;
+    this.newsFocusKey = key;
+    this.callbacks.onNewsFocus?.(hit ? { ids: hit.marker.ids, x: hit.x, y: 30 } : null);
+    this.requestDraw();
+  }
+
+  private clearNewsFocus(): void {
+    if (!this.newsFocusKey) return;
+    this.newsFocusKey = '';
+    this.canvas.style.cursor = 'crosshair';
+    this.callbacks.onNewsFocus?.(null);
+    this.requestDraw();
+  }
+
+  private drawNews(plot: ReturnType<CandleChart['plot']>, first: number, last: number): void {
+    const { ctx } = this;
+    ctx.font = UI;
+    ctx.textAlign = 'center';
+    for (const marker of this.news) {
+      const index = this.indexOfTime(marker.time);
+      if (index < first || index > last) continue;
+      const focused = marker.ids.join(',') === this.newsFocusKey;
+      const x = this.line(this.xOf(index, plot.right), 1);
+
+      ctx.strokeStyle = marker.color;
+      ctx.globalAlpha = focused ? 0.9 : 0.45;
+      ctx.lineWidth = 1;
+      ctx.setLineDash([3, 4]);
+      ctx.beginPath();
+      ctx.moveTo(x, 26);
+      ctx.lineTo(x, plot.bottom);
+      ctx.stroke();
+      ctx.setLineDash([]);
+      ctx.globalAlpha = 1;
+
+      const width = ctx.measureText(marker.label).width + 14;
+      const left = clamp(x - width / 2, 2, plot.right - width - 2);
+      ctx.fillStyle = marker.color;
+      this.roundedRect(left, 8, width, focused ? 20 : 18, 5);
+      ctx.fill();
+      ctx.fillStyle = '#ffffff';
+      ctx.fillText(marker.label, left + width / 2, focused ? 18.5 : 17.5);
+    }
+  }
+
   private setHover(point: Point | null): void {
     const plot = this.plot();
     const inside = point !== null && point.x <= plot.right && point.y <= plot.bottom && this.candles.length > 0;
     this.hover = inside ? point : null;
+    if (inside && this.pending) this.draft = { a: this.pending, b: this.chartPoint(point) };
     const index = inside ? clamp(Math.round(this.indexAt(point.x, plot.right)), 0, this.candles.length - 1) : -1;
 
     if (index !== this.hoverIndex) {
@@ -593,6 +922,8 @@ export class CandleChart {
     if (count > 0 && last >= first) {
       this.drawCandles(plot, first, last);
       this.drawOverlayLines(plot);
+      this.drawNews(plot, first, last);
+      this.drawDrawingsLayer(plot);
       this.drawMarkers(plot, first, last);
       this.drawLastPriceLine(plot);
     }

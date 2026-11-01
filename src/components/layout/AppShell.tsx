@@ -1,5 +1,6 @@
 import { useEffect } from 'react';
 import { ChartArea } from '@/components/chart/ChartArea';
+import { ChallengeView } from '@/components/challenge/ChallengeView';
 import { ComparisonView } from '@/components/comparison/ComparisonView';
 import { PerformanceView } from '@/components/performance/PerformanceView';
 import { PlaybackBar } from '@/components/playback/PlaybackBar';
@@ -43,10 +44,11 @@ export function AppShell() {
       </div>
 
       {view !== 'chart' && (
-        <main className="min-h-0 flex-1 overflow-y-auto overscroll-contain">
+        <main key={view} className="min-h-0 flex-1 animate-fade-in overflow-y-auto overscroll-contain">
           {view === 'strategies' && <StrategiesView />}
           {view === 'performance' && <PerformanceView />}
           {view === 'comparison' && <ComparisonView />}
+          {view === 'challenge' && <ChallengeView />}
         </main>
       )}
 

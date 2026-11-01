@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it } from 'vitest';
 import { DEFAULT_CANDLE_COLORS } from '@/domain/candleColors';
+import type { Drawing, NewDrawing } from '@/domain/drawings';
 import type { Candle } from '@/domain/market';
 import { generateMockM1 } from '@/data/mockCandles';
 import { CandleChart, type ChartCallbacks } from './CandleChart';
@@ -11,6 +12,7 @@ const HEIGHT = 500;
 const theme: ChartTheme = {
   background: 'rgb(9, 11, 16)', grid: 'rgb(24, 28, 39)', text: 'rgb(134, 143, 162)', border: 'rgb(35, 41, 56)',
   crosshair: 'rgb(118, 127, 148)', labelBackground: 'rgb(43, 50, 68)', labelText: '#ffffff', accent: 'rgb(61, 112, 242)', watermark: 'rgba(230, 234, 242, 0.05)',
+  bull: 'rgb(34, 197, 140)', bear: 'rgb(244, 84, 96)',
 };
 const m1 = generateMockM1({ startTime: Date.UTC(2026, 7, 3) / 1000, tradingDays: 3, startPrice: 1.085, seed: 5 });
 
@@ -193,6 +195,29 @@ describe('CandleChart', () => {
     expect(cuts[cuts.length - 1]).toBeNull();
   });
 
+  it('shows a news card on hover (mouse) or tap (touch) and hides it when the view moves', () => {
+    const focus: Array<string[] | null> = [];
+    const chart = create({ onNewsFocus: (f) => focus.push(f ? f.ids : null) });
+    const { barSpacing, rightEdge } = chart.getViewState();
+    const x = 732 - (rightEdge - 590) * barSpacing; // plot right edge is 800 − 68 axis px
+    chart.setNewsMarkers([{ time: m1[590].time, label: 'NFP', color: 'rgb(244, 84, 96)', ids: ['nfp', 'ur'] }]);
+    settle();
+
+    fire('pointermove', { clientX: x, clientY: 18 }); // over the label
+    expect(focus[focus.length - 1]).toEqual(['nfp', 'ur']);
+    fire('pointermove', { clientX: x, clientY: 250 }); // down in the plot: not on the label
+    expect(focus[focus.length - 1]).toBeNull();
+
+    fire('pointerdown', { pointerType: 'touch', clientX: x, clientY: 18 });
+    fire('pointerup', { pointerType: 'touch', clientX: x, clientY: 18 });
+    expect(focus[focus.length - 1]).toEqual(['nfp', 'ur']);
+    fire('wheel', { deltaX: 0, deltaY: -120, deltaMode: 0, clientX: 300, clientY: 200 }); // zooming moves the marker
+    expect(focus[focus.length - 1]).toBeNull();
+
+    chart.setNewsMarkers([]);
+    settle();
+  });
+
   it('draws position markers and price lines, and survives empty data and hiding', () => {
     const chart = create();
     chart.setOverlays({
@@ -208,6 +233,147 @@ describe('CandleChart', () => {
     chart.setData(m1.slice(0, 50), { reframe: true });
     settle();
     chart.destroy();
+    expect(true).toBe(true);
+  });
+});
+
+describe('drawing tools', () => {
+  beforeEach(() => installBrowser());
+
+  /** Screen position of a candle index / price in the 800×500 test chart (plot is 732 × 474). */
+  const geometry = (chart: CandleChart) => {
+    const state = chart.getViewState();
+    return {
+      x: (index: number) => 732 - (state.rightEdge - index) * state.barSpacing,
+      y: (price: number) => ((state.priceMax - price) / (state.priceMax - state.priceMin)) * 474,
+    };
+  };
+  const trend = (): Drawing => ({
+    id: 'd1', symbol: 'EURUSD', kind: 'trend', color: '#3d70f2',
+    a: { time: m1[500].time, price: m1[500].close }, b: { time: m1[560].time, price: m1[560].close },
+  });
+  const press = (x: number, y: number) => fire('pointerdown', { clientX: x, clientY: y });
+  const release = (x: number, y: number) => fire('pointerup', { clientX: x, clientY: y });
+  const move = (x: number, y: number) => fire('pointermove', { clientX: x, clientY: y });
+
+  it('draws a trend line by dragging, snapped to candles', () => {
+    const created: NewDrawing[] = [];
+    const chart = create({ onDrawingCreate: (d) => created.push(d) });
+    chart.setTool('trend');
+    chart.setDrawingColor('#10b981');
+    settle();
+    const g = geometry(chart);
+    press(g.x(500), g.y(m1[500].close));
+    move(g.x(530), g.y(m1[530].close));
+    move(g.x(560), g.y(m1[560].close));
+    release(g.x(560), g.y(m1[560].close));
+    settle();
+    expect(created).toHaveLength(1);
+    expect(created[0].kind).toBe('trend');
+    expect(created[0].color).toBe('#10b981');
+    expect(created[0].a.time).toBe(m1[500].time);
+    expect(created[0].b?.time).toBe(m1[560].time);
+  });
+
+  it('also accepts two separate taps, and ignores a tap on the same spot twice', () => {
+    const created: NewDrawing[] = [];
+    const chart = create({ onDrawingCreate: (d) => created.push(d) });
+    chart.setTool('rect');
+    settle();
+    const g = geometry(chart);
+    press(g.x(480), 200);
+    release(g.x(480), 200);
+    expect(created).toHaveLength(0); // waiting for the second corner
+    move(g.x(520), 260); // the preview follows the mouse
+    press(g.x(540), 260);
+    release(g.x(540), 260);
+    expect(created.map((d) => d.kind)).toEqual(['rect']);
+    expect(created[0].b?.time).toBe(m1[540].time);
+  });
+
+  it('places lines and text with one click', () => {
+    const created: NewDrawing[] = [];
+    const requests: number[] = [];
+    const chart = create({ onDrawingCreate: (d) => created.push(d), onTextRequest: (r) => requests.push(r.point.time) });
+    const g = geometry(chart);
+    chart.setTool('hline');
+    press(400, 220);
+    release(400, 220);
+    chart.setTool('vline');
+    press(g.x(550), 220);
+    release(g.x(550), 220);
+    chart.setTool('text');
+    press(g.x(560), 100);
+    release(g.x(560), 100);
+    expect(created.map((d) => d.kind)).toEqual(['hline', 'vline']);
+    expect(created[1].a.time).toBe(m1[550].time);
+    expect(requests).toEqual([m1[560].time]);
+  });
+
+  it('selects a drawing and drags it as a whole, saving once at the end', () => {
+    const selected: Array<string | null> = [];
+    const updated: Drawing[] = [];
+    const chart = create({ onDrawingSelect: (id) => selected.push(id), onDrawingUpdate: (d) => updated.push(d) });
+    chart.setDrawings([trend()]);
+    settle();
+    const g = geometry(chart);
+    const mid = { x: g.x(530), y: g.y((m1[500].close + m1[560].close) / 2) };
+    press(mid.x, mid.y);
+    expect(selected).toEqual(['d1']);
+    move(mid.x + 30, mid.y);
+    move(mid.x + 60, mid.y);
+    expect(updated).toHaveLength(0); // nothing saved while dragging
+    release(mid.x + 60, mid.y);
+    expect(updated).toHaveLength(1);
+    expect(updated[0].a.time).toBeGreaterThan(m1[500].time);
+    expect(updated[0].b!.time - updated[0].a.time).toBe(m1[560].time - m1[500].time); // shape unchanged
+
+    press(400, 30); // empty space deselects (and pans)
+    release(400, 30);
+    expect(selected[selected.length - 1]).toBeNull();
+  });
+
+  it('erases the drawing that was clicked', () => {
+    const erased: string[] = [];
+    const chart = create({ onDrawingErase: (id) => erased.push(id) });
+    chart.setDrawings([trend()]);
+    chart.setTool('eraser');
+    settle();
+    const g = geometry(chart);
+    const mid = { x: g.x(530), y: g.y((m1[500].close + m1[560].close) / 2) };
+    press(g.x(100), 400);
+    release(g.x(100), 400);
+    expect(erased).toHaveLength(0); // clicking empty space erases nothing
+    press(mid.x, mid.y);
+    release(mid.x, mid.y);
+    expect(erased).toEqual(['d1']);
+  });
+
+  it('measures without saving anything, and clears when the tool changes', () => {
+    const created: NewDrawing[] = [];
+    const chart = create({ onDrawingCreate: (d) => created.push(d) });
+    chart.setTool('measure');
+    settle();
+    const g = geometry(chart);
+    const before = calls.fillText;
+    press(g.x(500), g.y(m1[500].close));
+    move(g.x(560), g.y(m1[560].close) - 20);
+    release(g.x(560), g.y(m1[560].close) - 20);
+    settle();
+    expect(created).toHaveLength(0);
+    expect(calls.fillText).toBeGreaterThan(before + 2); // the measurement labels were drawn
+    chart.setTool('cursor');
+    settle();
+    chart.destroy();
+  });
+
+  it('draws every kind of drawing without errors', () => {
+    const chart = create();
+    const base = { symbol: 'EURUSD', color: '#a855f7', a: { time: m1[500].time, price: m1[500].close }, b: { time: m1[560].time, price: m1[560].close + 0.0006 } };
+    chart.setDrawings(['trend', 'ray', 'hline', 'vline', 'fib', 'rect', 'text'].map((kind, i) => ({ ...base, id: `k${i}`, kind: kind as Drawing['kind'], text: 'Support' })));
+    settle();
+    chart.setData(m1.slice(0, 40), { reframe: true }); // drawings far outside the data still draw
+    settle();
     expect(true).toBe(true);
   });
 });

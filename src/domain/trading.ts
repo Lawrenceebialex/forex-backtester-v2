@@ -66,6 +66,10 @@ export interface TradingSettings {
   initialBalance: number;
   /** Leverage as N in 1:N. */
   leverage: number;
+  /** Patience training: P&L and equity numbers glide to their new values instead of jumping. */
+  gradualOutcome: boolean;
+  /** How long the glide takes. */
+  gradualSeconds: number;
 }
 
 export const DEFAULT_TRADING_SETTINGS: TradingSettings = {
@@ -73,7 +77,11 @@ export const DEFAULT_TRADING_SETTINGS: TradingSettings = {
   variableSpread: true,
   initialBalance: 10_000,
   leverage: 100,
+  gradualOutcome: false,
+  gradualSeconds: 6,
 };
+
+export const GRADUAL_SECONDS_OPTIONS = [3, 6, 10, 15] as const;
 
 export const SPREAD_LIMITS = { min: 0, max: 10, step: 0.1 } as const;
 export const LOT_LIMITS = { min: 0.01, max: 100, step: 0.01 } as const;

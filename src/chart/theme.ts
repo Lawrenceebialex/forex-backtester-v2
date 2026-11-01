@@ -11,6 +11,8 @@ export interface ChartTheme {
   labelText: string;
   accent: string;
   watermark: string;
+  bull: string;
+  bear: string;
 }
 
 export function readChartTheme(): ChartTheme {
@@ -24,5 +26,7 @@ export function readChartTheme(): ChartTheme {
     labelText: '#ffffff',
     accent: readCssColor('--accent'),
     watermark: readCssColor('--ink', 0.045),
+    bull: readCssColor('--bull'),
+    bear: readCssColor('--bear'),
   };
 }

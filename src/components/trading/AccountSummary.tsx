@@ -1,5 +1,6 @@
 import { formatMoney, formatSignedMoney, pnlTone } from '@/lib/format';
 import { cn } from '@/lib/cn';
+import { useGradual } from '@/hooks/useEasedNumber';
 import { useTradingStore } from '@/stores/tradingStore';
 import { PanelSection } from './PanelSection';
 
@@ -17,7 +18,13 @@ export function AccountSummary() {
   const equity = useTradingStore((state) => state.equity);
   const freeMargin = useTradingStore((state) => state.freeMargin);
   const usedMargin = useTradingStore((state) => state.usedMargin);
-  const floatingPnl = useTradingStore((state) => state.floatingPnl);
+  const floatingPnl = useGradual(useTradingStore((state) => state.floatingPnl));
+  const shown = {
+    balance: useGradual(balance),
+    equity: useGradual(equity),
+    freeMargin: useGradual(freeMargin),
+    usedMargin: useGradual(usedMargin),
+  };
 
   return (
     <PanelSection
@@ -29,10 +36,10 @@ export function AccountSummary() {
       }
     >
       <dl className="grid grid-cols-2 gap-x-4 gap-y-3">
-        <Stat label="Balance" value={formatMoney(balance)} />
-        <Stat label="Equity" value={formatMoney(equity)} />
-        <Stat label="Free margin" value={formatMoney(freeMargin)} />
-        <Stat label="Used margin" value={formatMoney(usedMargin)} />
+        <Stat label="Balance" value={formatMoney(shown.balance)} />
+        <Stat label="Equity" value={formatMoney(shown.equity)} />
+        <Stat label="Free margin" value={formatMoney(shown.freeMargin)} />
+        <Stat label="Used margin" value={formatMoney(shown.usedMargin)} />
       </dl>
     </PanelSection>
   );

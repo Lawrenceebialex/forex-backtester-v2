@@ -1,11 +1,11 @@
-import { useEffect, useState } from 'react';
+import { useEffect } from 'react';
 import { SlidersHorizontal, X } from 'lucide-react';
 import { cn } from '@/lib/cn';
 import { useMediaQuery } from '@/hooks/useMediaQuery';
+import { useSwipeToDismiss } from '@/hooks/useSwipeToDismiss';
 import { DESKTOP_QUERY, useUiStore } from '@/stores/uiStore';
 import { IconButton } from '@/components/ui/IconButton';
 import { AccountSummary } from './AccountSummary';
-import { ExecutionSettings } from './ExecutionSettings';
 import { OrderTicket } from './OrderTicket';
 import { PositionsList } from './PositionsList';
 
@@ -16,7 +16,8 @@ export function TradingPanel() {
   const open = useUiStore((state) => state.tradingPanelOpen);
   const setOpen = useUiStore((state) => state.setTradingPanelOpen);
   const isDocked = useMediaQuery(DESKTOP_QUERY);
-  const [settingsOpen, setSettingsOpen] = useState(false);
+  const openSettings = useUiStore((state) => state.openSettings);
+  const swipe = useSwipeToDismiss(() => setOpen(false));
 
   useEffect(() => {
     if (!open || isDocked) return;
@@ -35,6 +36,7 @@ export function TradingPanel() {
 
       <aside
         aria-label="Trading panel"
+        style={swipe.style}
         className={cn(
           'z-40 flex flex-col bg-surface pb-[env(safe-area-inset-bottom)]',
           // Phone: bottom sheet.
@@ -49,19 +51,14 @@ export function TradingPanel() {
           !open && 'lg:hidden',
         )}
       >
-        <div className="flex justify-center pt-2 md:hidden" aria-hidden>
+        <div {...swipe.handlers} className="flex touch-none justify-center pb-1 pt-2 md:hidden" aria-hidden>
           <span className="h-1 w-10 rounded-full bg-line-strong" />
         </div>
 
         <div className="flex h-12 shrink-0 items-center justify-between border-b border-line pl-4 pr-2">
           <h2 className="text-sm font-semibold text-ink">Trading</h2>
           <div className="flex items-center gap-0.5">
-            <IconButton
-              label={settingsOpen ? 'Hide execution settings' : 'Execution settings'}
-              active={settingsOpen}
-              aria-expanded={settingsOpen}
-              onClick={() => setSettingsOpen((value) => !value)}
-            >
+            <IconButton label="Trading settings" aria-haspopup="dialog" onClick={() => openSettings('trading')}>
               <SlidersHorizontal size={17} />
             </IconButton>
             <IconButton label="Close trading panel" onClick={() => setOpen(false)} className="lg:hidden">
@@ -71,7 +68,6 @@ export function TradingPanel() {
         </div>
 
         <div className="min-h-0 flex-1 space-y-3 overflow-y-auto overscroll-contain p-3 md:p-4">
-          {settingsOpen && <ExecutionSettings />}
           <AccountSummary />
           <OrderTicket />
           <PositionsList />

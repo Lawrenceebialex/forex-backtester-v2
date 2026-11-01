@@ -42,6 +42,8 @@ interface PlaybackState {
   advance: (m1Candles: number) => void;
   /** Moves the clock forward by one candle's worth of time on the selected timeframe. */
   stepForward: () => void;
+  /** Moves the clock back by one candle's worth of time on the selected timeframe (pauses). */
+  stepBackward: () => void;
   /** Moves the clock to any time (forwards or backwards) and pauses. The account is never touched. */
   jumpTo: (time: UnixSeconds) => void;
   /** Back to where a new session starts. */
@@ -77,6 +79,11 @@ export const usePlaybackStore = create<PlaybackState>()(
       },
 
       stepForward: () => get().advance(TIMEFRAME_SECONDS[get().timeframe] / 60),
+
+      stepBackward: () => {
+        const index = indexAtOrBefore(get().currentTime);
+        get().jumpTo(M1_CANDLES[Math.max(0, index - TIMEFRAME_SECONDS[get().timeframe] / 60)].time);
+      },
 
       jumpTo: (time) => set({ currentTime: snapToCandleTime(time), isPlaying: false }),
 

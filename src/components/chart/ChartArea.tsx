@@ -4,6 +4,7 @@ import { usePlaybackStore } from '@/stores/playbackStore';
 import { useUiStore } from '@/stores/uiStore';
 import { ToolbarButton } from '@/components/ui/ToolbarButton';
 import { ChartView } from './ChartView';
+import { NewsButton } from '@/components/news/NewsButton';
 import { JumpToDate } from './JumpToDate';
 import { TimeframeSelector } from './TimeframeSelector';
 
@@ -28,6 +29,7 @@ export function ChartArea() {
         <TimeframeSelector />
         <div className="mx-0.5 h-5 w-px shrink-0 bg-line" />
         <JumpToDate />
+        <NewsButton />
         <ToolbarButton
           icon={Scissors}
           label="Cut chart"

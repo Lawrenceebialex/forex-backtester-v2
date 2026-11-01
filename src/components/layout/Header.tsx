@@ -1,27 +1,23 @@
-import { useState } from 'react';
-import { Palette, PanelRight, Scissors } from 'lucide-react';
+import { Palette, PanelRight, Settings } from 'lucide-react';
+import { ChallengeChip } from '@/components/challenge/ChallengeChip';
+import { IconButton } from '@/components/ui/IconButton';
+import { useGradual } from '@/hooks/useEasedNumber';
 import { cn } from '@/lib/cn';
 import { formatSignedMoney, pnlTone } from '@/lib/format';
 import { useTradingStore } from '@/stores/tradingStore';
 import { useUiStore } from '@/stores/uiStore';
-import { CandleColorPanel } from '@/components/settings/CandleColorPanel';
-import { IconButton } from '@/components/ui/IconButton';
-import { Overlay } from '@/components/ui/Overlay';
 import { Logo } from './Logo';
 import { NavTabs } from './NavTabs';
 import { NAV_ITEMS } from './navItems';
-import { PairSwitcher } from './PairSwitcher';
 import { ThemeToggle } from './ThemeToggle';
 
 export function Header() {
-  const [colorsOpen, setColorsOpen] = useState(false);
   const view = useUiStore((state) => state.view);
   const panelOpen = useUiStore((state) => state.tradingPanelOpen);
   const togglePanel = useUiStore((state) => state.toggleTradingPanel);
-  const cutMode = useUiStore((state) => state.cutMode);
-  const setCutMode = useUiStore((state) => state.setCutMode);
+  const openSettings = useUiStore((state) => state.openSettings);
   const openPositions = useTradingStore((state) => state.positions.length);
-  const floatingPnl = useTradingStore((state) => state.floatingPnl);
+  const floatingPnl = useGradual(useTradingStore((state) => state.floatingPnl));
   const onChart = view === 'chart';
 
   return (
@@ -30,36 +26,24 @@ export function Header() {
         <div className="flex items-center gap-2.5">
           <Logo />
           <span className="hidden text-[15px] font-semibold tracking-tight text-ink lg:block">Forex Backtester</span>
-          <h1 className="text-[15px] font-semibold tracking-tight text-ink md:hidden">
-            {NAV_ITEMS.find((item) => item.id === view)?.label}
-          </h1>
+          <h1 className="text-[15px] font-semibold tracking-tight text-ink md:hidden">{NAV_ITEMS.find((item) => item.id === view)?.label}</h1>
         </div>
-
-        {onChart && <PairSwitcher />}
 
         <NavTabs />
 
         <div className="ml-auto flex items-center gap-0.5 md:gap-1">
           {onChart && (
-            <IconButton
-              label={cutMode ? 'Cancel cut' : 'Cut chart and replay from here'}
-              active={cutMode}
-              onClick={() => setCutMode(!cutMode)}
-            >
-              <Scissors size={18} />
-            </IconButton>
-          )}
-          {onChart && (
-            <IconButton label="Candle colors" active={colorsOpen} aria-haspopup="dialog" onClick={() => setColorsOpen(true)}>
+            <IconButton label="Candle colors" className="hidden md:inline-flex" onClick={() => openSettings('chart')}>
               <Palette size={18} />
             </IconButton>
           )}
+          <ChallengeChip />
           <ThemeToggle />
+          <IconButton label="Settings" aria-haspopup="dialog" onClick={() => openSettings()}>
+            <Settings size={18} />
+          </IconButton>
           {onChart && openPositions > 0 && (
-            <span
-              className={cn('ml-1 font-mono text-xs font-medium tabular-nums', pnlTone(floatingPnl))}
-              aria-label={`Floating profit and loss across ${openPositions} open positions`}
-            >
+            <span className={cn('ml-1 font-mono text-xs font-medium tabular-nums', pnlTone(floatingPnl))} aria-label={`Floating profit and loss across ${openPositions} open positions`}>
               {formatSignedMoney(floatingPnl)}
             </span>
           )}
@@ -79,10 +63,6 @@ export function Header() {
           )}
         </div>
       </div>
-
-      <Overlay open={colorsOpen} onClose={() => setColorsOpen(false)} title="Candle colors">
-        <CandleColorPanel />
-      </Overlay>
     </header>
   );
 }

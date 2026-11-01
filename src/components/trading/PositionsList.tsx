@@ -1,6 +1,7 @@
 import { ArrowRight, Inbox } from 'lucide-react';
 import { SYMBOL } from '@/data/marketData';
 import type { Position } from '@/domain/trading';
+import { useGradual } from '@/hooks/useEasedNumber';
 import { cn } from '@/lib/cn';
 import { formatPips, formatPrice, formatSignedMoney, pnlTone } from '@/lib/format';
 import { closePrice, floatingResult } from '@/lib/trading';
@@ -18,7 +19,9 @@ function LevelChip({ label, price, tone }: { label: string; price: number; tone:
 function PositionRow({ position }: { position: Position }) {
   const quote = useTradingStore((state) => state.quote);
   const closePosition = useTradingStore((state) => state.closePosition);
-  const { pips, pnl } = floatingResult(position, quote, SYMBOL);
+  const live = floatingResult(position, quote, SYMBOL);
+  const pips = useGradual(live.pips);
+  const pnl = useGradual(live.pnl);
   const tone = pnlTone(pnl);
   const isBuy = position.side === 'buy';
 
