@@ -1,28 +1,28 @@
-/** Public R2 base URL (server-side / curl only — browsers use the Pages proxy). */
+/** Public R2 base URL. */
 export const R2_BASE = 'https://pub-bae06cc5db21418c9699a28c5de315d1.r2.dev';
 
 export type R2Pair = 'EURUSD' | 'USDJPY';
 export type R2Timeframe = '1m' | '5m' | '15m' | '1h' | '4h' | '1d';
 
 /**
- * Browser-safe URL. Goes through Cloudflare Pages Function so missing R2 CORS
- * headers do not block the fetch.
+ * Prefer direct R2 (CORS must be enabled on the bucket).
+ * Falls back path via Pages Function proxy if needed.
  */
 export function r2Url(pair: R2Pair, tf: R2Timeframe): string {
-  // Same-origin proxy — works on pages.dev and custom domains.
-  return `/api/ohlc/${pair}/${tf}`;
-}
-
-/** Direct R2 URL (for server-side tools / debugging only). */
-export function r2DirectUrl(pair: R2Pair, tf: R2Timeframe): string {
   return `${R2_BASE}/${pair}/${tf}.json`;
 }
 
+/** Same-origin proxy (use if direct R2 CORS fails). */
+export function r2ProxyUrl(pair: R2Pair, tf: R2Timeframe): string {
+  return `/api/ohlc/${pair}/${tf}`;
+}
+
 /**
- * Fallback start when the uploaded JSON has broken timestamps (all `time: 1`).
- * 2024-01-02 00:00 UTC — sequential bars are assigned from here.
+ * Fallback start when a file has broken timestamps (all `time: 1`).
+ * Only used for higher-TF files that were uploaded without real times.
+ * Prefer 1m files — those already have correct Unix timestamps through 2026.
  */
-export const REPAIR_START_UTC = 1_704_153_600;
+export const REPAIR_START_UTC = 1_704_153_600; // 2024-01-02
 
 export const TF_SECONDS: Record<R2Timeframe, number> = {
   '1m': 60,
