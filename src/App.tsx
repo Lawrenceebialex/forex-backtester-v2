@@ -1,6 +1,5 @@
-import { useEffect } from 'react';
-import { AuthScreen } from '@/components/auth/AuthScreen';
-import { OnboardingScreen } from '@/components/onboarding/OnboardingScreen';
+import { useEffect, useState } from 'react';
+import { LandingPage } from '@/components/landing/LandingPage';
 import { BreachAlert } from '@/components/challenge/BreachAlert';
 import { AppShell } from '@/components/layout/AppShell';
 import { SettingsModal } from '@/components/settings/SettingsModal';
@@ -19,9 +18,25 @@ import { useTradingEngine } from '@/hooks/useTradingEngine';
 import { useAuthStore } from '@/stores/authStore';
 import { usePlaybackStore } from '@/stores/playbackStore';
 
+/**
+ * TEMPORARY for testing: skip sign in / register entirely.
+ * Flip to false when you want the real auth gate again.
+ */
+export const AUTH_DISABLED = true;
+
 export default function App() {
   const user = useAuthStore((s) => s.user);
   const onboardingDone = useAuthStore((s) => s.onboardingDone);
+  const completeOnboarding = useAuthStore((s) => s.completeOnboarding);
+  const register = useAuthStore((s) => s.register);
+
+  const [showLanding, setShowLanding] = useState(() => {
+    try {
+      return localStorage.getItem('fb-skip-landing') !== '1';
+    } catch {
+      return true;
+    }
+  });
 
   useEffect(() => {
     try {
@@ -29,14 +44,16 @@ export default function App() {
     } catch {
       /* ignore */
     }
-    void bootstrapMarketData('EURUSD').then(() => {
-      usePlaybackStore.setState({
-        currentTime: DEFAULT_START_TIME,
-        sessionRange: { ...REPLAY_RANGE },
-        isPlaying: false,
-        visibleRange: null,
-      });
-    });
+    void bootstrapMarketData('EURUSD')
+      .then(() => {
+        usePlaybackStore.setState({
+          currentTime: DEFAULT_START_TIME,
+          sessionRange: { ...REPLAY_RANGE },
+          isPlaying: false,
+          visibleRange: null,
+        });
+      })
+      .catch((err) => console.error('Market data bootstrap failed', err));
   }, []);
 
   usePlaybackEngine();
@@ -45,12 +62,28 @@ export default function App() {
   usePropEngine();
   useShortcuts();
 
-  if (!user) {
-    return <AuthScreen />;
-  }
+  // Seed a local tester profile when auth is bypassed.
+  useEffect(() => {
+    if (!AUTH_DISABLED) return;
+    if (!user) {
+      register('tester@local.dev', 'Testpass1', 'Tester');
+    }
+    if (!onboardingDone) {
+      completeOnboarding();
+    }
+  }, [user, onboardingDone, register, completeOnboarding]);
 
-  if (!onboardingDone) {
-    return <OnboardingScreen />;
+  const enterApp = () => {
+    try {
+      localStorage.setItem('fb-skip-landing', '1');
+    } catch {
+      /* ignore */
+    }
+    setShowLanding(false);
+  };
+
+  if (showLanding) {
+    return <LandingPage onEnter={enterApp} />;
   }
 
   return (
