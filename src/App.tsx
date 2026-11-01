@@ -1,4 +1,6 @@
 import { useEffect } from 'react';
+import { AuthScreen } from '@/components/auth/AuthScreen';
+import { OnboardingScreen } from '@/components/onboarding/OnboardingScreen';
 import { BreachAlert } from '@/components/challenge/BreachAlert';
 import { AppShell } from '@/components/layout/AppShell';
 import { SettingsModal } from '@/components/settings/SettingsModal';
@@ -13,11 +15,14 @@ import { usePlaybackEngine } from '@/hooks/usePlaybackEngine';
 import { usePropEngine } from '@/hooks/usePropEngine';
 import { useShortcuts } from '@/hooks/useShortcuts';
 import { useTradingEngine } from '@/hooks/useTradingEngine';
+import { useAuthStore } from '@/stores/authStore';
 import { usePlaybackStore } from '@/stores/playbackStore';
 
 export default function App() {
+  const user = useAuthStore((s) => s.user);
+  const onboardingDone = useAuthStore((s) => s.onboardingDone);
+
   useEffect(() => {
-    // Drop any clock saved while we still had mock/broken 2024-only data.
     try {
       localStorage.removeItem('fb-playback');
     } catch {
@@ -37,6 +42,14 @@ export default function App() {
   useTradingEngine();
   usePropEngine();
   useShortcuts();
+
+  if (!user) {
+    return <AuthScreen />;
+  }
+
+  if (!onboardingDone) {
+    return <OnboardingScreen />;
+  }
 
   return (
     <>
