@@ -27,15 +27,17 @@ export let SYMBOL: SymbolInfo = SYMBOLS.EURUSD;
 export let ACTIVE_PAIR: PairId = 'EURUSD';
 
 /** Base resolution of the loaded series (seconds). */
-export let BASE_SECONDS = 900;
+export let BASE_SECONDS = 60;
 
-/** Preferred R2 timeframe: 15m is rich enough and still small (~5–6 MB). */
-const PREFERRED_TF: R2Timeframe = '15m';
-const PREFERRED_SECONDS = 900;
+/**
+ * Prefer true 1m files — they have real Unix timestamps through Oct 2026.
+ * Higher TFs on R2 still have broken time:1 and only fake-repair into 2025.
+ */
+const PREFERRED_TF: R2Timeframe = '1m';
 
 const mock = generateMockM1({
   startTime: Date.UTC(2024, 0, 2) / 1000,
-  tradingDays: 10,
+  tradingDays: 5,
   startPrice: 1.104,
   seed: 20240102,
 });
@@ -85,11 +87,10 @@ function applyCandles(next: Candle[], pair: PairId, baseSeconds: number) {
   M1_CANDLES = candles;
   LAST_INDEX = Math.max(0, candles.length - 1);
   BASE_SECONDS = baseSeconds;
-  // Start ~25% into history so the chart already shows many past candles
-  // (future bars stay hidden until play advances).
+  // Start ~20% into history so many candles are already visible.
   REPLAY_START_INDEX = Math.min(
-    Math.max(200, Math.floor(LAST_INDEX * 0.25)),
-    Math.max(0, LAST_INDEX - 50),
+    Math.max(500, Math.floor(LAST_INDEX * 0.2)),
+    Math.max(0, LAST_INDEX - 100),
   );
   DEFAULT_START_TIME = candles[REPLAY_START_INDEX].time;
   REPLAY_RANGE = { from: candles[0].time, to: candles[LAST_INDEX].time };
@@ -102,8 +103,9 @@ function applyCandles(next: Candle[], pair: PairId, baseSeconds: number) {
 }
 
 /**
- * Load real history from R2 via the Pages /api/ohlc proxy (CORS-safe).
- * Uses 15m bars by default. Falls back to 1h if 15m fails.
+ * Load real history from R2.
+ * Uses 1m first (correct dates through Oct 2026). Falls back to 1h if 1m fails
+ * (1h still has broken times — last resort only).
  */
 export async function bootstrapMarketData(pair: PairId = 'EURUSD'): Promise<void> {
   loading = true;
@@ -111,16 +113,19 @@ export async function bootstrapMarketData(pair: PairId = 'EURUSD'): Promise<void
   notify();
   try {
     let bars: Candle[];
-    let seconds = PREFERRED_SECONDS;
+    let seconds = 60;
     try {
       bars = await loadR2Candles(pair, PREFERRED_TF);
+      seconds = 60;
     } catch (firstErr) {
-      console.warn('[data] 15m failed, trying 1h', firstErr);
+      console.warn('[data] 1m failed, trying 1h', firstErr);
       bars = await loadR2Candles(pair, '1h');
       seconds = 3600;
     }
     applyCandles(bars, pair, seconds);
-    console.info(`[data] Loaded ${pair}: ${bars.length} bars (base ${seconds}s) from R2`);
+    const from = new Date(bars[0].time * 1000).toISOString().slice(0, 10);
+    const to = new Date(bars[bars.length - 1].time * 1000).toISOString().slice(0, 10);
+    console.info(`[data] Loaded ${pair}: ${bars.length} bars ${from} → ${to}`);
   } catch (err) {
     dataError = err instanceof Error ? err.message : String(err);
     console.error('[data] R2 load failed, keeping mock candles', err);
