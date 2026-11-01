@@ -1,4 +1,4 @@
-/** Prop-firm rule evaluation (from final Claude package). */
+/** Prop-firm rule evaluation — full API expected by propStore + ChallengeView. */
 import { findBlockingEvent } from '@/data/newsEvents';
 import type { UnixSeconds } from '@/domain/market';
 import type { NewsEvent } from '@/domain/news';
@@ -125,11 +125,7 @@ export function evaluateTick(
     const profit = snap.equity - startingBalance;
     if (profit >= target) {
       return {
-        challenge: {
-          ...next,
-          status: 'passed',
-          resolvedAt: snap.time,
-        },
+        challenge: { ...next, status: 'passed', resolvedAt: snap.time },
         drafts,
       };
     }
@@ -138,97 +134,203 @@ export function evaluateTick(
   return { challenge: next, drafts };
 }
 
-export function evaluateOrder(
+export function checkProfitConsistency(
   challenge: Challenge,
-  snap: RuleSnapshot,
-  order: { lots: number; time: UnixSeconds },
+  closedTrades: readonly ClosedTrade[],
+  time: UnixSeconds,
+): BreachDraft | null {
+  const rule = challenge.rules.profitConsistency;
+  if (!rule?.enabled) return null;
+  const trades = inChallenge(challenge, closedTrades);
+  const net = trades.reduce((sum, trade) => sum + trade.pnl, 0);
+  if (net <= 0 || trades.length === 0) return null;
+  const best = trades.reduce((a, b) => (b.pnl > a.pnl ? b : a));
+  const share = (best.pnl / net) * 100;
+  if (share <= rule.maxSharePercent) return null;
+  return draft(
+    'profitConsistency',
+    'profit-consistency',
+    time,
+    `One trade made ${formatPercent(share, 0)} of the profit (limit ${formatPercent(rule.maxSharePercent, 0)}).`,
+    [
+      { label: 'Best trade', value: `#${best.number} · ${formatMoney(best.pnl)}` },
+      { label: 'Total profit', value: formatMoney(net) },
+      { label: 'Share of profit', value: formatPercent(share, 1) },
+      { label: 'Allowed', value: formatPercent(rule.maxSharePercent, 0) },
+    ],
+  );
+}
+
+/** Lot size, lot consistency, news window. */
+export function evaluateNewPosition(
+  challenge: Challenge,
+  position: Position,
+  allTrades: readonly (Position | ClosedTrade)[],
+  news: readonly NewsEvent[],
 ): BreachDraft[] {
-  const drafts: BreachDraft[] = [];
   const { rules } = challenge;
-  if (rules.maxLot.enabled && order.lots > rules.maxLot.value) {
+  const drafts: BreachDraft[] = [];
+  const label = `#${position.number} ${position.side === 'buy' ? 'Buy' : 'Sell'} ${position.lots.toFixed(2)}`;
+
+  const maxLot = (rules as any).maxLotSize ?? (rules as any).maxLot;
+  if (maxLot?.enabled && position.lots > (maxLot.lots ?? maxLot.value)) {
+    const limit = maxLot.lots ?? maxLot.value;
     drafts.push(
-      draft('maxLot', `lot:${order.time}:${order.lots}`, order.time, `Order size ${order.lots} lots exceeds max ${rules.maxLot.value}.`, [
-        { label: 'Max lot', value: String(rules.maxLot.value) },
-        { label: 'Order lots', value: String(order.lots) },
+      draft('maxLotSize' as RuleId, `lot:${position.id}`, position.entryTime, `${label} is above the ${Number(limit).toFixed(2)} lot limit.`, [
+        { label: 'Lot limit', value: Number(limit).toFixed(2) },
+        { label: 'This trade', value: position.lots.toFixed(2) },
       ]),
     );
   }
-  if (rules.newsTrading.enabled) {
-    const blocking = findBlockingEvent(order.time, rules.newsTrading.minutesBefore, rules.newsTrading.minutesAfter);
+
+  if (rules.lotConsistency?.enabled) {
+    const previous = inChallenge(challenge, allTrades).filter((trade) => trade.number < position.number);
+    if (previous.length >= 3) {
+      const average = previous.reduce((sum, trade) => sum + trade.lots, 0) / previous.length;
+      const tolerance = rules.lotConsistency.tolerancePercent / 100;
+      const low = average * (1 - tolerance);
+      const high = average * (1 + tolerance);
+      if (position.lots < low - 1e-9 || position.lots > high + 1e-9) {
+        drafts.push(
+          draft(
+            'lotConsistency',
+            `lotcons:${position.id}`,
+            position.entryTime,
+            `${label} is outside ±${rules.lotConsistency.tolerancePercent}% of average lot size.`,
+            [
+              { label: 'Average lot', value: average.toFixed(2) },
+              { label: 'This trade', value: position.lots.toFixed(2) },
+            ],
+          ),
+        );
+      }
+    }
+  }
+
+  const newsRule = rules.newsTrading;
+  if (newsRule && (newsRule as any).blocked !== false) {
+    const before = (newsRule as any).minutesBefore ?? (newsRule as any).windowMinutes ?? 5;
+    const after = (newsRule as any).minutesAfter ?? (newsRule as any).windowMinutes ?? 5;
+    const blocking = findBlockingEvent(position.entryTime, before, after);
     if (blocking) {
       drafts.push(
-        draft('newsTrading', `news:${order.time}:${blocking.id}`, order.time, `Trade blocked around news: ${blocking.title}.`, [
+        draft('newsTrading', `news:${position.id}`, position.entryTime, `Trade near news: ${blocking.title}.`, [
           { label: 'Event', value: blocking.title },
         ]),
       );
     }
   }
+
+  void news;
   return drafts;
 }
 
-export function evaluateClose(
+export function evaluateClosedTrade(
   challenge: Challenge,
-  snap: RuleSnapshot,
   trade: ClosedTrade,
+  news: readonly NewsEvent[],
 ): BreachDraft[] {
   const drafts: BreachDraft[] = [];
-  const { rules } = challenge;
-  if (rules.weekendHolding.enabled) {
-    const openDay = new Date(trade.openTime * 1000).getUTCDay();
-    const closeDay = new Date(trade.closeTime * 1000).getUTCDay();
-    // Fri open still open into weekend is checked elsewhere; simple close-on-weekend flag
-    if (closeDay === 6 || closeDay === 0) {
-      drafts.push(
-        draft('weekendHolding', `weekend:${trade.id}`, trade.closeTime, 'Position closed or held across the weekend under this rule set.', [
-          { label: 'Trade', value: `#${trade.number}` },
-        ]),
-      );
-    }
-  }
-  void openDay;
-  void snap;
-  void rules;
+  const consistency = checkProfitConsistency(challenge, [trade], trade.closeTime);
+  if (consistency) drafts.push(consistency);
+  void news;
   return drafts;
 }
 
-export function challengeGauges(challenge: Challenge, equity: number) {
-  const { rules, startingBalance, peakEquity, dayStarts } = challenge;
-  const today = dayKey(Math.floor(Date.now() / 1000));
-  const dayStart = dayStarts[today] ?? equity;
-  return [
-    rules.dailyLoss.enabled && {
-      id: 'dailyLoss',
-      label: 'Daily loss',
-      used: Math.max(0, dayStart - equity),
-      limit: limitAmount(rules.dailyLoss, startingBalance),
-    },
-    rules.totalLoss.enabled && {
-      id: 'totalLoss',
-      label: 'Total loss',
-      used: Math.max(0, startingBalance - equity),
-      limit: limitAmount(rules.totalLoss, startingBalance),
-    },
-    rules.trailingDrawdown.enabled && {
-      id: 'trailingDrawdown',
-      label: 'Trailing DD',
-      used: Math.max(0, peakEquity - equity),
-      limit: limitAmount(rules.trailingDrawdown, startingBalance),
-    },
-    rules.profitTarget.enabled && {
-      id: 'profitTarget',
-      label: 'Profit target',
-      used: Math.max(0, equity - startingBalance),
-      limit: limitAmount(rules.profitTarget, startingBalance),
-    },
-  ].filter(Boolean) as { id: string; label: string; used: number; limit: number }[];
+export function evaluateWeekend(
+  challenge: Challenge,
+  gapTimes: readonly UnixSeconds[],
+  allTrades: readonly ClosedTrade[],
+): BreachDraft[] {
+  if (!challenge.rules.weekendHolding?.blocked && !(challenge.rules.weekendHolding as any)?.enabled) {
+    return [];
+  }
+  const drafts: BreachDraft[] = [];
+  for (const trade of inChallenge(challenge, allTrades)) {
+    for (const gap of gapTimes) {
+      if (trade.openTime <= gap && trade.closeTime >= gap) {
+        drafts.push(
+          draft('weekendHolding', `weekend:${trade.id}:${gap}`, gap, `Trade #${trade.number} held across a weekend gap.`, [
+            { label: 'Trade', value: `#${trade.number}` },
+          ]),
+        );
+        break;
+      }
+    }
+  }
+  return drafts;
 }
 
-export function summarizeRules(rules: Rules): string[] {
-  const lines: string[] = [];
-  (Object.keys(RULE_TITLES) as RuleId[]).forEach((id) => {
-    const rule = (rules as any)[id];
-    if (rule && rule.enabled) lines.push(RULE_TITLES[id]);
+export interface Gauge {
+  label: string;
+  used: number;
+  limit: number;
+  fill: number;
+}
+
+export function computeGauges(
+  challenge: Challenge,
+  snap: RuleSnapshot,
+): { risk: Gauge[]; target: Gauge | null } {
+  const { rules, startingBalance } = challenge;
+  const gauge = (label: string, used: number, limit: number): Gauge => ({
+    label,
+    used: Math.max(0, used),
+    limit,
+    fill: limit > 0 ? Math.min(1, Math.max(0, used) / limit) : 0,
   });
+
+  const risk: Gauge[] = [];
+  if (rules.dailyLoss.enabled) {
+    const dayStart = challenge.dayStarts[dayKey(snap.time)] ?? snap.equity;
+    risk.push(gauge('Daily loss', dayStart - snap.equity, limitAmount(rules.dailyLoss, startingBalance)));
+  }
+  if (rules.totalLoss.enabled) {
+    risk.push(gauge('Total loss', startingBalance - snap.equity, limitAmount(rules.totalLoss, startingBalance)));
+  }
+  if (rules.trailingDrawdown.enabled) {
+    risk.push(
+      gauge(
+        'Trailing drawdown',
+        Math.max(challenge.peakEquity, snap.equity) - snap.equity,
+        limitAmount(rules.trailingDrawdown, startingBalance),
+      ),
+    );
+  }
+  const target = rules.profitTarget.enabled
+    ? gauge('Profit target', snap.balance - startingBalance, limitAmount(rules.profitTarget, startingBalance))
+    : null;
+  return { risk, target };
+}
+
+export function describeRules(rules: Rules, startingBalance: number): string[] {
+  const lines: string[] = [];
+  if (rules.dailyLoss.enabled) lines.push(`Maximum daily loss: ${describeLimit(rules.dailyLoss, startingBalance)}`);
+  if (rules.totalLoss.enabled) lines.push(`Maximum total loss: ${describeLimit(rules.totalLoss, startingBalance)}`);
+  if (rules.trailingDrawdown.enabled) {
+    lines.push(`Trailing drawdown: ${describeLimit(rules.trailingDrawdown, startingBalance)}`);
+  }
+  if (rules.profitTarget.enabled) lines.push(`Profit target: ${describeLimit(rules.profitTarget, startingBalance)}`);
+  const maxLot = (rules as any).maxLotSize;
+  if (maxLot?.enabled) lines.push(`Maximum lot size: ${Number(maxLot.lots ?? maxLot.value).toFixed(2)}`);
+  if (rules.lotConsistency?.enabled) {
+    lines.push(`Lot-size consistency: within ±${rules.lotConsistency.tolerancePercent}% of the average`);
+  }
+  if (rules.profitConsistency?.enabled) {
+    lines.push(`Profit consistency: no trade above ${rules.profitConsistency.maxSharePercent}% of total profit`);
+  }
+  const news = rules.newsTrading as any;
+  if (news) {
+    lines.push(
+      news.blocked !== false
+        ? `News trading: blocked ±${news.windowMinutes ?? news.minutesBefore ?? 5} min around high-impact events`
+        : 'News trading: allowed',
+    );
+  }
+  const weekend = rules.weekendHolding as any;
+  if (weekend) {
+    lines.push(weekend.blocked || weekend.enabled ? 'Weekend holding: blocked' : 'Weekend holding: allowed');
+  }
   return lines;
 }
 
