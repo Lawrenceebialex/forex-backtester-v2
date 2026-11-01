@@ -21,11 +21,15 @@ import { WorkspaceHeader } from './WorkspaceHeader';
 export function AppShell() {
   const view = useUiStore((state) => state.view);
   const isDocked = useMediaQuery(DESKTOP_QUERY);
+  const tradingPanelOpen = useUiStore((state) => state.tradingPanelOpen);
   const setTradingPanelOpen = useUiStore((state) => state.setTradingPanelOpen);
 
+  // Only write when the value actually changes — avoids max-update-depth from set({ same }).
   useEffect(() => {
-    setTradingPanelOpen(isDocked);
-  }, [isDocked, setTradingPanelOpen]);
+    if (tradingPanelOpen !== isDocked) {
+      setTradingPanelOpen(isDocked);
+    }
+  }, [isDocked, tradingPanelOpen, setTradingPanelOpen]);
 
   const inWorkspace = view === 'workspace';
 

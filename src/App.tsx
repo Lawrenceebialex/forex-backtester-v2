@@ -18,18 +18,22 @@ import { useTradingEngine } from '@/hooks/useTradingEngine';
 import { useAuthStore } from '@/stores/authStore';
 import { usePlaybackStore } from '@/stores/playbackStore';
 
-/**
- * TEMPORARY for testing: skip sign in / register entirely.
- * Flip to false when you want the real auth gate again.
- */
+/** TEMPORARY: skip sign in / register. Set false to restore auth gate. */
 export const AUTH_DISABLED = true;
 
-export default function App() {
-  const user = useAuthStore((s) => s.user);
-  const onboardingDone = useAuthStore((s) => s.onboardingDone);
-  const completeOnboarding = useAuthStore((s) => s.completeOnboarding);
-  const register = useAuthStore((s) => s.register);
+/** Seed a local tester profile once (outside render) so effects cannot loop. */
+function ensureTesterProfile() {
+  if (!AUTH_DISABLED) return;
+  const state = useAuthStore.getState();
+  if (!state.user) {
+    state.register('tester@local.dev', 'Testpass1', 'Tester');
+  }
+  if (!useAuthStore.getState().onboardingDone) {
+    useAuthStore.getState().completeOnboarding();
+  }
+}
 
+export default function App() {
   const [showLanding, setShowLanding] = useState(() => {
     try {
       return localStorage.getItem('fb-skip-landing') !== '1';
@@ -38,7 +42,9 @@ export default function App() {
     }
   });
 
+  // Run once on mount — never depends on user/onboarding state.
   useEffect(() => {
+    ensureTesterProfile();
     try {
       localStorage.removeItem('fb-playback');
     } catch {
@@ -62,18 +68,8 @@ export default function App() {
   usePropEngine();
   useShortcuts();
 
-  // Seed a local tester profile when auth is bypassed.
-  useEffect(() => {
-    if (!AUTH_DISABLED) return;
-    if (!user) {
-      register('tester@local.dev', 'Testpass1', 'Tester');
-    }
-    if (!onboardingDone) {
-      completeOnboarding();
-    }
-  }, [user, onboardingDone, register, completeOnboarding]);
-
   const enterApp = () => {
+    ensureTesterProfile();
     try {
       localStorage.setItem('fb-skip-landing', '1');
     } catch {
