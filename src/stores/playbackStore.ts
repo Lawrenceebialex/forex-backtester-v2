@@ -23,14 +23,8 @@ interface PlaybackState {
   isPlaying: boolean;
   speed: PlaybackSpeed;
   timeframe: Timeframe;
-  /**
-   * The virtual clock: open time of the newest M1 candle revealed so far.
-   * Candles after this time are never handed to the chart.
-   */
   currentTime: UnixSeconds;
-  /** The span of market time the clock can move across (the whole dataset). */
   sessionRange: TimeRange;
-  /** The time range currently shown in the chart viewport (reported by the chart). */
   visibleRange: TimeRange | null;
 
   play: () => void;
@@ -38,17 +32,18 @@ interface PlaybackState {
   togglePlay: () => void;
   setSpeed: (speed: PlaybackSpeed) => void;
   setTimeframe: (timeframe: Timeframe) => void;
-  /** Moves the clock forward by a number of M1 candles. Pauses automatically at the end of the data. */
   advance: (m1Candles: number) => void;
-  /** Moves the clock forward by one candle's worth of time on the selected timeframe. */
   stepForward: () => void;
-  /** Moves the clock back by one candle's worth of time on the selected timeframe (pauses). */
   stepBackward: () => void;
-  /** Moves the clock to any time (forwards or backwards) and pauses. The account is never touched. */
   jumpTo: (time: UnixSeconds) => void;
-  /** Back to where a new session starts. */
   reset: () => void;
   setVisibleRange: (range: TimeRange | null) => void;
+}
+
+function sameRange(a: TimeRange | null, b: TimeRange | null): boolean {
+  if (a === b) return true;
+  if (!a || !b) return false;
+  return a.from === b.from && a.to === b.to;
 }
 
 export const usePlaybackStore = create<PlaybackState>()(
@@ -72,6 +67,7 @@ export const usePlaybackStore = create<PlaybackState>()(
       advance: (m1Candles) => {
         const index = indexAtOrBefore(get().currentTime);
         const next = Math.min(index + Math.max(1, Math.floor(m1Candles)), LAST_INDEX);
+        if (!M1_CANDLES[next]) return;
         set({
           currentTime: M1_CANDLES[next].time,
           isPlaying: get().isPlaying && next < LAST_INDEX,
@@ -82,14 +78,20 @@ export const usePlaybackStore = create<PlaybackState>()(
 
       stepBackward: () => {
         const index = indexAtOrBefore(get().currentTime);
-        get().jumpTo(M1_CANDLES[Math.max(0, index - TIMEFRAME_SECONDS[get().timeframe] / 60)].time);
+        const prev = Math.max(0, index - TIMEFRAME_SECONDS[get().timeframe] / 60);
+        if (!M1_CANDLES[prev]) return;
+        get().jumpTo(M1_CANDLES[prev].time);
       },
 
       jumpTo: (time) => set({ currentTime: snapToCandleTime(time), isPlaying: false }),
 
       reset: () => set({ currentTime: DEFAULT_START_TIME, isPlaying: false }),
 
-      setVisibleRange: (visibleRange) => set({ visibleRange }),
+      // Guard: chart resize/pan can spam identical ranges; writing every time caused #185.
+      setVisibleRange: (visibleRange) => {
+        if (sameRange(get().visibleRange, visibleRange)) return;
+        set({ visibleRange });
+      },
     }),
     {
       name: 'fb-playback',

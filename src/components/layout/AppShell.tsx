@@ -11,7 +11,6 @@ import { StrategiesView } from '@/components/strategies/StrategiesView';
 import { SettingsView } from '@/components/settings/SettingsView';
 import { TradingPanel } from '@/components/trading/TradingPanel';
 import { useMediaQuery } from '@/hooks/useMediaQuery';
-import { cn } from '@/lib/cn';
 import { DESKTOP_QUERY, useUiStore } from '@/stores/uiStore';
 import { BottomNav } from './BottomNav';
 import { MobileMenuButton, Sidebar } from './Sidebar';
@@ -21,8 +20,6 @@ export function AppShell() {
   const view = useUiStore((state) => state.view);
   const isDesktop = useMediaQuery(DESKTOP_QUERY);
   const tradingPanelOpen = useUiStore((state) => state.tradingPanelOpen);
-
-  // Desktop defaults the trade panel open via CSS/layout; no useEffect setState.
   const showPanel = isDesktop || tradingPanelOpen;
   const inWorkspace = view === 'workspace';
 
@@ -38,30 +35,36 @@ export function AppShell() {
           </header>
         )}
 
-        <div className={cn('min-h-0 flex-1 flex-col', inWorkspace ? 'flex' : 'hidden')}>
-          <WorkspaceHeader />
-          <main className="flex min-h-0 flex-1">
-            <ChartArea />
-            {showPanel ? <TradingPanel /> : null}
-          </main>
-          <PlaybackBar />
-        </div>
-
-        {!inWorkspace && (
-          <main key={view} className="min-h-0 flex-1 animate-fade-in overflow-y-auto overscroll-contain">
-            {view === 'dashboard' && <DashboardView />}
-            {view === 'new-backtest' && <NewBacktestView />}
-            {view === 'backtests' && <MyBacktestsView />}
-            {view === 'strategies' && <StrategiesView />}
-            {view === 'analytics' && <AnalyticsView />}
-            {view === 'journal' && <TradeJournalView />}
-            {view === 'settings' && <SettingsView />}
-            {view === 'comparison' && <ComparisonView />}
-            {view === 'challenge' && <ChallengeView />}
-          </main>
+        {/*
+          IMPORTANT: only mount the chart workspace when active.
+          Keeping ChartView in a CSS-hidden tree still runs canvas + store
+          subscriptions and was a source of React error #185 (max update depth).
+        */}
+        {inWorkspace ? (
+          <>
+            <WorkspaceHeader />
+            <main className="flex min-h-0 flex-1">
+              <ChartArea />
+              {showPanel ? <TradingPanel /> : null}
+            </main>
+            <PlaybackBar />
+          </>
+        ) : (
+          <>
+            <main key={view} className="min-h-0 flex-1 animate-fade-in overflow-y-auto overscroll-contain">
+              {view === 'dashboard' && <DashboardView />}
+              {view === 'new-backtest' && <NewBacktestView />}
+              {view === 'backtests' && <MyBacktestsView />}
+              {view === 'strategies' && <StrategiesView />}
+              {view === 'analytics' && <AnalyticsView />}
+              {view === 'journal' && <TradeJournalView />}
+              {view === 'settings' && <SettingsView />}
+              {view === 'comparison' && <ComparisonView />}
+              {view === 'challenge' && <ChallengeView />}
+            </main>
+            <BottomNav />
+          </>
         )}
-
-        {!inWorkspace && <BottomNav />}
       </div>
     </div>
   );

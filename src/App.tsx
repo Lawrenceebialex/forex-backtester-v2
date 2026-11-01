@@ -14,6 +14,7 @@ import { useShortcuts } from '@/hooks/useShortcuts';
 import { useTradingEngine } from '@/hooks/useTradingEngine';
 import { useAuthStore } from '@/stores/authStore';
 import { usePlaybackStore } from '@/stores/playbackStore';
+import { useUiStore } from '@/stores/uiStore';
 
 /** TEMPORARY: skip sign in / register. */
 export const AUTH_DISABLED = true;
@@ -27,7 +28,6 @@ function seedTester() {
   }
 }
 
-/** Engines only run after the user leaves the landing page. */
 function AppEngines() {
   usePlaybackEngine();
   useTradingEngine();
@@ -38,17 +38,14 @@ function AppEngines() {
 }
 
 export default function App() {
-  const [entered, setEntered] = useState(() => {
-    try {
-      return localStorage.getItem('fb-skip-landing') === '1';
-    } catch {
-      return false;
-    }
-  });
+  // Always start on landing after a crash recovery; only skip if explicitly chosen this session.
+  const [entered, setEntered] = useState(false);
   const [booted, setBooted] = useState(false);
 
   useEffect(() => {
     seedTester();
+    // Force a known-safe starting view (dashboard, not workspace/chart).
+    useUiStore.setState({ view: 'dashboard', cutMode: false });
     try {
       localStorage.removeItem('fb-playback');
     } catch {
@@ -77,11 +74,7 @@ export default function App() {
 
   const enterApp = useCallback(() => {
     seedTester();
-    try {
-      localStorage.setItem('fb-skip-landing', '1');
-    } catch {
-      /* ignore */
-    }
+    useUiStore.setState({ view: 'dashboard' });
     setEntered(true);
   }, []);
 
