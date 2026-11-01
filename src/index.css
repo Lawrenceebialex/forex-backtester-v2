@@ -94,17 +94,62 @@
     outline-offset: 2px;
   }
 
+  /* Interactive elements ease between states instead of snapping. */
+  a,
+  button,
+  input,
+  select {
+    transition-property: color, background-color, border-color, box-shadow, opacity, transform;
+    transition-duration: 150ms;
+    transition-timing-function: ease;
+  }
+
+  /* Slim, theme-aware scrollbars. */
+  * {
+    scrollbar-width: thin;
+    scrollbar-color: rgb(var(--line-strong)) transparent;
+  }
+  ::-webkit-scrollbar {
+    width: 10px;
+    height: 10px;
+  }
+  ::-webkit-scrollbar-thumb {
+    background: rgb(var(--line-strong));
+    border: 3px solid transparent;
+    border-radius: 999px;
+    background-clip: content-box;
+  }
+
+  /* Remove the number spinners: the app has its own steppers. */
+  input[type='number']::-webkit-inner-spin-button {
+    -webkit-appearance: none;
+  }
+
   ::selection {
     background: rgb(var(--accent) / 0.3);
   }
 }
 
 @layer utilities {
+  .skeleton {
+    background: linear-gradient(90deg, rgb(var(--overlay)) 0%, rgb(var(--line)) 50%, rgb(var(--overlay)) 100%);
+    background-size: 200% 100%;
+    animation: shimmer 1.4s ease-in-out infinite;
+  }
   .no-scrollbar {
     scrollbar-width: none;
   }
   .no-scrollbar::-webkit-scrollbar {
     display: none;
+  }
+}
+
+@keyframes shimmer {
+  from {
+    background-position: 200% 0;
+  }
+  to {
+    background-position: -200% 0;
   }
 }
 

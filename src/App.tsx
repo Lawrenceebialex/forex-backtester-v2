@@ -1,35 +1,25 @@
-import { useEffect } from 'react';
+import { BreachAlert } from '@/components/challenge/BreachAlert';
 import { AppShell } from '@/components/layout/AppShell';
+import { SettingsModal } from '@/components/settings/SettingsModal';
+import { ShortcutsPanel } from '@/components/settings/ShortcutsPanel';
 import { ToastViewport } from '@/components/ui/ToastViewport';
-import { bootstrapMarketData, DEFAULT_START_TIME } from '@/data/marketData';
 import { usePlaybackEngine } from '@/hooks/usePlaybackEngine';
+import { usePropEngine } from '@/hooks/usePropEngine';
+import { useShortcuts } from '@/hooks/useShortcuts';
 import { useTradingEngine } from '@/hooks/useTradingEngine';
-import { usePlaybackStore } from '@/stores/playbackStore';
-
-function Engines() {
-  usePlaybackEngine();
-  useTradingEngine();
-  return null;
-}
 
 export default function App() {
-  useEffect(() => {
-    void bootstrapMarketData('EURUSD').then(() => {
-      // Drop any old mock clock stuck in localStorage, then jump into real history.
-      try {
-        localStorage.removeItem('fb-playback');
-      } catch {
-        /* ignore */
-      }
-      usePlaybackStore.getState().jumpTo(DEFAULT_START_TIME);
-    });
-  }, []);
-
+  usePlaybackEngine();
+  useTradingEngine();
+  usePropEngine();
+  useShortcuts();
   return (
     <>
-      <Engines />
       <AppShell />
       <ToastViewport />
+      <BreachAlert />
+      <SettingsModal />
+      <ShortcutsPanel />
     </>
   );
 }
