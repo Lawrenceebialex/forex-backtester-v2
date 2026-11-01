@@ -1,50 +1,147 @@
 import type { Candle, SymbolInfo, TimeRange, UnixSeconds } from '@/domain/market';
 import { generateMockM1 } from './mockCandles';
+import { loadR2Candles } from './loadR2Candles';
+import type { R2Timeframe } from './r2Config';
 
-export const SYMBOL: SymbolInfo = {
-  symbol: 'EURUSD',
-  description: 'Euro / US Dollar',
-  pricePrecision: 5,
-  pipSize: 0.0001,
-  contractSize: 100_000,
+export type PairId = 'EURUSD' | 'USDJPY';
+
+export const SYMBOLS: Record<PairId, SymbolInfo> = {
+  EURUSD: {
+    symbol: 'EURUSD',
+    description: 'Euro / US Dollar',
+    pricePrecision: 5,
+    pipSize: 0.0001,
+    contractSize: 100_000,
+  },
+  USDJPY: {
+    symbol: 'USDJPY',
+    description: 'US Dollar / Japanese Yen',
+    pricePrecision: 3,
+    pipSize: 0.01,
+    contractSize: 100_000,
+  },
 };
 
-/**
- * ── DATA SOURCE ────────────────────────────────────────────────────────────
- * The whole app reads market data through this module. To use real history,
- * replace `M1_CANDLES` with candles loaded from your API / files (sorted by
- * time, ascending, UTC seconds). Nothing else needs to change.
- * ───────────────────────────────────────────────────────────────────────────
- */
-export const M1_CANDLES: readonly Candle[] = generateMockM1({
-  startTime: Date.UTC(2026, 7, 3) / 1000, // Monday 3 Aug 2026, 00:00 UTC
-  tradingDays: 20,
-  startPrice: 1.085,
-  seed: 20260803,
+export let SYMBOL: SymbolInfo = SYMBOLS.EURUSD;
+export let ACTIVE_PAIR: PairId = 'EURUSD';
+export let BASE_SECONDS = 3600;
+
+const mock = generateMockM1({
+  startTime: Date.UTC(2024, 0, 2) / 1000,
+  tradingDays: 10,
+  startPrice: 1.104,
+  seed: 20240102,
 });
 
-/**
- * Load state of the price history. Mock data is ready immediately. When real history is fetched
- * asynchronously, set this to 'loading' / 'error' (e.g. from a small store) and the chart shows
- * a skeleton or an error message instead of an empty canvas.
- */
-export const MARKET_DATA_STATUS = 'ready' as 'loading' | 'ready' | 'error';
+let candles: Candle[] = [...mock];
+let dataReady = false;
+let dataError: string | null = null;
+let loading = false;
+const listeners = new Set<() => void>();
 
-export const LAST_INDEX = M1_CANDLES.length - 1;
+function notify() {
+  listeners.forEach((fn) => fn());
+}
 
-/** Replay begins on the Monday of week 3 at 07:00 UTC (London open) with 10 days of history behind it. */
-export const REPLAY_START_INDEX = 10 * 1440 + 7 * 60;
+export function subscribeMarketData(fn: () => void): () => void {
+  listeners.add(fn);
+  return () => listeners.delete(fn);
+}
 
-/** First time a new session opens at. */
-export const DEFAULT_START_TIME: UnixSeconds = M1_CANDLES[REPLAY_START_INDEX].time;
+export function isMarketDataReady(): boolean {
+  return dataReady;
+}
 
-/** The whole dataset is navigable: users can jump to any candle. */
-export const REPLAY_RANGE: TimeRange = {
-  from: M1_CANDLES[0].time,
-  to: M1_CANDLES[LAST_INDEX].time,
+export function isMarketDataLoading(): boolean {
+  return loading;
+}
+
+export function getMarketDataError(): string | null {
+  return dataError;
+}
+
+export function getM1Candles(): readonly Candle[] {
+  return candles;
+}
+
+export let M1_CANDLES: readonly Candle[] = candles;
+export let LAST_INDEX = Math.max(0, M1_CANDLES.length - 1);
+export let REPLAY_START_INDEX = 0;
+export let DEFAULT_START_TIME: UnixSeconds = M1_CANDLES[0]?.time ?? 0;
+export let REPLAY_RANGE: TimeRange = {
+  from: M1_CANDLES[0]?.time ?? 0,
+  to: M1_CANDLES[LAST_INDEX]?.time ?? 0,
 };
+export let MARKET_DATA_STATUS: 'loading' | 'ready' | 'error' = 'loading';
+export let WEEKEND_GAP_TIMES: readonly UnixSeconds[] = [];
 
-/** Index of the last M1 candle opening at or before `time` (clamped to the data). */
+function recomputeWeekendGaps() {
+  WEEKEND_GAP_TIMES = M1_CANDLES.flatMap((candle, i) =>
+    i < LAST_INDEX && M1_CANDLES[i + 1].time - candle.time > 6 * 3600 ? [candle.time] : [],
+  );
+}
+
+function applyCandles(next: Candle[], pair: PairId, baseSeconds: number) {
+  candles = next;
+  M1_CANDLES = candles;
+  LAST_INDEX = Math.max(0, candles.length - 1);
+  BASE_SECONDS = baseSeconds;
+  REPLAY_START_INDEX = Math.min(
+    Math.max(50, Math.floor(LAST_INDEX * 0.2)),
+    Math.max(0, LAST_INDEX - 20),
+  );
+  DEFAULT_START_TIME = candles[REPLAY_START_INDEX]?.time ?? candles[0].time;
+  REPLAY_RANGE = { from: candles[0].time, to: candles[LAST_INDEX].time };
+  ACTIVE_PAIR = pair;
+  SYMBOL = SYMBOLS[pair];
+  recomputeWeekendGaps();
+  dataReady = true;
+  dataError = null;
+  loading = false;
+  MARKET_DATA_STATUS = 'ready';
+  notify();
+}
+
+const BOOT_ORDER: { tf: R2Timeframe; seconds: number }[] = [
+  { tf: '1h', seconds: 3600 },
+  { tf: '15m', seconds: 900 },
+  { tf: '1m', seconds: 60 },
+];
+
+export async function bootstrapMarketData(pair: PairId = 'EURUSD'): Promise<void> {
+  loading = true;
+  dataError = null;
+  MARKET_DATA_STATUS = 'loading';
+  notify();
+
+  let lastErr: unknown;
+  for (const { tf, seconds } of BOOT_ORDER) {
+    try {
+      const bars = await loadR2Candles(pair, tf);
+      applyCandles(bars, pair, seconds);
+      const from = new Date(bars[0].time * 1000).toISOString().slice(0, 10);
+      const to = new Date(bars[bars.length - 1].time * 1000).toISOString().slice(0, 10);
+      console.info(`[data] ${pair} ${tf}: ${bars.length} bars ${from} → ${to}`);
+      return;
+    } catch (err) {
+      lastErr = err;
+      console.warn(`[data] ${pair}/${tf} failed`, err);
+    }
+  }
+
+  dataError = lastErr instanceof Error ? lastErr.message : String(lastErr);
+  console.error('[data] R2 load failed, using mock', lastErr);
+  applyCandles([...mock], pair, 60);
+  MARKET_DATA_STATUS = 'error';
+  loading = false;
+  notify();
+}
+
+export async function switchPair(pair: PairId): Promise<void> {
+  if (pair === ACTIVE_PAIR && dataReady) return;
+  await bootstrapMarketData(pair);
+}
+
 export function indexAtOrBefore(time: UnixSeconds): number {
   let low = 0;
   let high = LAST_INDEX;
@@ -56,17 +153,10 @@ export function indexAtOrBefore(time: UnixSeconds): number {
   return low;
 }
 
-/** Time of the candle the clock lands on for any requested time (clamped to the data). */
 export function snapToCandleTime(time: UnixSeconds): UnixSeconds {
   return M1_CANDLES[indexAtOrBefore(time)].time;
 }
 
-/** 0 → first candle, 1 → last candle. Index-based so weekend gaps don't skew it. */
 export function replayProgress(time: UnixSeconds): number {
   return LAST_INDEX <= 0 ? 1 : indexAtOrBefore(time) / LAST_INDEX;
 }
-
-/** Time of the last candle before each market closure (the weekend gaps in the data). */
-export const WEEKEND_GAP_TIMES: readonly UnixSeconds[] = M1_CANDLES.flatMap((candle, i) =>
-  i < LAST_INDEX && M1_CANDLES[i + 1].time - candle.time > 6 * 3600 ? [candle.time] : [],
-);
