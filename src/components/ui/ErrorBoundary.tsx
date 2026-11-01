@@ -8,7 +8,6 @@ interface State {
   error: Error | null;
 }
 
-/** Catches render crashes so the user never sees a pure black screen with no feedback. */
 export class ErrorBoundary extends Component<Props, State> {
   state: State = { error: null };
 
@@ -36,10 +35,10 @@ export class ErrorBoundary extends Component<Props, State> {
               } catch {
                 /* ignore */
               }
-              window.location.reload();
+              window.location.href = window.location.pathname;
             }}
           >
-            Reload
+            Reload from home
           </button>
         </div>
       );
