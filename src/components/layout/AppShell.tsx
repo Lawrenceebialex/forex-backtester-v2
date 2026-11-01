@@ -1,4 +1,3 @@
-import { useEffect } from 'react';
 import { AnalyticsView } from '@/components/analytics/AnalyticsView';
 import { ChartArea } from '@/components/chart/ChartArea';
 import { ChallengeView } from '@/components/challenge/ChallengeView';
@@ -20,17 +19,11 @@ import { WorkspaceHeader } from './WorkspaceHeader';
 
 export function AppShell() {
   const view = useUiStore((state) => state.view);
-  const isDocked = useMediaQuery(DESKTOP_QUERY);
+  const isDesktop = useMediaQuery(DESKTOP_QUERY);
   const tradingPanelOpen = useUiStore((state) => state.tradingPanelOpen);
-  const setTradingPanelOpen = useUiStore((state) => state.setTradingPanelOpen);
 
-  // Only write when the value actually changes — avoids max-update-depth from set({ same }).
-  useEffect(() => {
-    if (tradingPanelOpen !== isDocked) {
-      setTradingPanelOpen(isDocked);
-    }
-  }, [isDocked, tradingPanelOpen, setTradingPanelOpen]);
-
+  // Desktop defaults the trade panel open via CSS/layout; no useEffect setState.
+  const showPanel = isDesktop || tradingPanelOpen;
   const inWorkspace = view === 'workspace';
 
   return (
@@ -49,7 +42,7 @@ export function AppShell() {
           <WorkspaceHeader />
           <main className="flex min-h-0 flex-1">
             <ChartArea />
-            <TradingPanel />
+            {showPanel ? <TradingPanel /> : null}
           </main>
           <PlaybackBar />
         </div>

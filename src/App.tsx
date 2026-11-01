@@ -1,94 +1,105 @@
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { LandingPage } from '@/components/landing/LandingPage';
-import { BreachAlert } from '@/components/challenge/BreachAlert';
 import { AppShell } from '@/components/layout/AppShell';
-import { SettingsModal } from '@/components/settings/SettingsModal';
-import { ShortcutsPanel } from '@/components/settings/ShortcutsPanel';
 import { ToastViewport } from '@/components/ui/ToastViewport';
 import {
   DEFAULT_START_TIME,
   REPLAY_RANGE,
   bootstrapMarketData,
 } from '@/data/marketData';
-import { usePlaybackEngine } from '@/hooks/usePlaybackEngine';
-import { usePropEngine } from '@/hooks/usePropEngine';
-import { useSessionSync } from '@/hooks/useSessionSync';
-import { useShortcuts } from '@/hooks/useShortcuts';
-import { useTradingEngine } from '@/hooks/useTradingEngine';
 import { useAuthStore } from '@/stores/authStore';
 import { usePlaybackStore } from '@/stores/playbackStore';
 
-/** TEMPORARY: skip sign in / register. Set false to restore auth gate. */
+/** TEMPORARY: skip sign in / register. */
 export const AUTH_DISABLED = true;
 
-/** Seed a local tester profile once (outside render) so effects cannot loop. */
-function ensureTesterProfile() {
+function seedTester() {
   if (!AUTH_DISABLED) return;
-  const state = useAuthStore.getState();
-  if (!state.user) {
-    state.register('tester@local.dev', 'Testpass1', 'Tester');
-  }
+  const auth = useAuthStore.getState();
+  if (!auth.user) auth.register('tester@local.dev', 'Testpass1', 'Tester');
   if (!useAuthStore.getState().onboardingDone) {
     useAuthStore.getState().completeOnboarding();
   }
 }
 
-export default function App() {
-  const [showLanding, setShowLanding] = useState(() => {
-    try {
-      return localStorage.getItem('fb-skip-landing') !== '1';
-    } catch {
-      return true;
-    }
-  });
-
-  // Run once on mount — never depends on user/onboarding state.
-  useEffect(() => {
-    ensureTesterProfile();
-    try {
-      localStorage.removeItem('fb-playback');
-    } catch {
-      /* ignore */
-    }
-    void bootstrapMarketData('EURUSD')
-      .then(() => {
-        usePlaybackStore.setState({
-          currentTime: DEFAULT_START_TIME,
-          sessionRange: { ...REPLAY_RANGE },
-          isPlaying: false,
-          visibleRange: null,
-        });
-      })
-      .catch((err) => console.error('Market data bootstrap failed', err));
-  }, []);
+/**
+ * Engines mount only after the user leaves the landing page.
+ * That avoids any store/subscribe loops during first paint.
+ */
+function AppEngines() {
+  // Lazy-require style: call hooks only when this component is mounted.
+  // eslint-disable-next-line @typescript-eslint/no-require-imports
+  const { usePlaybackEngine } = require('@/hooks/usePlaybackEngine') as typeof import('@/hooks/usePlaybackEngine');
+  const { useTradingEngine } = require('@/hooks/useTradingEngine') as typeof import('@/hooks/useTradingEngine');
+  const { useSessionSync } = require('@/hooks/useSessionSync') as typeof import('@/hooks/useSessionSync');
+  const { usePropEngine } = require('@/hooks/usePropEngine') as typeof import('@/hooks/usePropEngine');
+  const { useShortcuts } = require('@/hooks/useShortcuts') as typeof import('@/hooks/useShortcuts');
 
   usePlaybackEngine();
   useTradingEngine();
   useSessionSync();
   usePropEngine();
   useShortcuts();
+  return null;
+}
 
-  const enterApp = () => {
-    ensureTesterProfile();
+export default function App() {
+  const [entered, setEntered] = useState(() => {
+    try {
+      return localStorage.getItem('fb-skip-landing') === '1';
+    } catch {
+      return false;
+    }
+  });
+  const [booted, setBooted] = useState(false);
+
+  useEffect(() => {
+    seedTester();
+    try {
+      localStorage.removeItem('fb-playback');
+    } catch {
+      /* ignore */
+    }
+    let cancelled = false;
+    void bootstrapMarketData('EURUSD')
+      .then(() => {
+        if (cancelled) return;
+        usePlaybackStore.setState({
+          currentTime: DEFAULT_START_TIME,
+          sessionRange: { ...REPLAY_RANGE },
+          isPlaying: false,
+          visibleRange: null,
+        });
+        setBooted(true);
+      })
+      .catch((err) => {
+        console.error('Market data bootstrap failed', err);
+        if (!cancelled) setBooted(true);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  const enterApp = useCallback(() => {
+    seedTester();
     try {
       localStorage.setItem('fb-skip-landing', '1');
     } catch {
       /* ignore */
     }
-    setShowLanding(false);
-  };
+    setEntered(true);
+  }, []);
 
-  if (showLanding) {
+  if (!entered) {
     return <LandingPage onEnter={enterApp} />;
   }
 
   return (
     <>
+      {booted ? <AppEngines /> : null}
       <AppShell />
       <ToastViewport />
-      <BreachAlert />
-      <SettingsModal />
-      <ShortcutsPanel />
     </>
   );
 }
