@@ -7,7 +7,6 @@ const PAIRS: { id: PairId; label: string }[] = [
   { id: 'USDJPY', label: 'USDJPY' },
 ];
 
-/** Switch the active symbol and reload history from R2. */
 export function PairSwitcher() {
   const [pair, setPair] = useState<PairId>(ACTIVE_PAIR);
   const [busy, setBusy] = useState(false);
@@ -31,7 +30,7 @@ export function PairSwitcher() {
   };
 
   return (
-    <div className="flex items-center rounded-lg border border-line bg-raised p-0.5" role="group" aria-label="Currency pair">
+    <div className="flex items-center rounded-lg border border-line bg-raised p-0.5" role="group" aria-label="Instrument">
       {PAIRS.map(({ id, label }) => (
         <button
           key={id}
