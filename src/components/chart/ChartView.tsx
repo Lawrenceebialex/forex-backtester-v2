@@ -1,11 +1,17 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
 import { ChevronsRight, Scissors } from 'lucide-react';
 import { DrawingToolbar } from '@/components/drawing/DrawingToolbar';
 import { TextPrompt } from '@/components/drawing/TextPrompt';
 import { DRAWING_TOOLS } from '@/components/drawing/tools';
 import { CandleChart, type NewsFocus } from '@/chart/CandleChart';
 import { readChartTheme } from '@/chart/theme';
-import { M1_CANDLES, MARKET_DATA_STATUS, SYMBOL, indexAtOrBefore } from '@/data/marketData';
+import {
+  M1_CANDLES,
+  MARKET_DATA_STATUS,
+  SYMBOL,
+  indexAtOrBefore,
+  subscribeMarketData,
+} from '@/data/marketData';
 import { NEWS_EVENTS, countReleased } from '@/data/newsEvents';
 import type { ChartPoint } from '@/domain/drawings';
 import { TIMEFRAME_SECONDS, type Candle } from '@/domain/market';
@@ -35,7 +41,21 @@ import { usePositionOverlays } from './usePositionOverlays';
 /** Above this many newly opened candles in one tick, redraw with setData instead of update(). */
 const MAX_INCREMENTAL_CANDLES = 200;
 
+function useMarketDataVersion(): number {
+  return useSyncExternalStore(
+    subscribeMarketData,
+    () => {
+      // Version token changes whenever bootstrap notifies (ready/error).
+      return (M1_CANDLES.length << 2) ^ (MARKET_DATA_STATUS === 'ready' ? 1 : MARKET_DATA_STATUS === 'error' ? 2 : 0);
+    },
+    () => 0,
+  );
+}
+
 export function ChartView() {
+  const dataVersion = useMarketDataVersion();
+  const dataStatus = MARKET_DATA_STATUS;
+
   const containerRef = useRef<HTMLDivElement>(null);
   const chartRef = useRef<CandleChart | null>(null);
   const [hovered, setHovered] = useState<Ohlc | null>(null);
@@ -51,7 +71,7 @@ export function ChartView() {
   const tool = useDrawingStore((state) => state.tool);
   const drawColor = useDrawingStore((state) => state.color);
   const allDrawings = useDrawingStore((state) => state.drawings);
-  const drawings = useMemo(() => allDrawings.filter((drawing) => drawing.symbol === SYMBOL.symbol), [allDrawings]);
+  const drawings = useMemo(() => allDrawings.filter((drawing) => drawing.symbol === SYMBOL.symbol), [allDrawings, dataVersion]);
   const timeframe = usePlaybackStore((state) => state.timeframe);
   const currentTime = usePlaybackStore((state) => state.currentTime);
 
@@ -59,10 +79,13 @@ export function ChartView() {
   const minImpact = useNewsStore((state) => state.minImpact);
   const releasedNews = usePlaybackStore((state) => countReleased(NEWS_EVENTS, state.currentTime));
 
-  const timeframeIndex = useMemo(() => buildTimeframeIndex(M1_CANDLES, timeframe), [timeframe]);
+  const timeframeIndex = useMemo(
+    () => buildTimeframeIndex(M1_CANDLES, timeframe),
+    [timeframe, dataVersion],
+  );
   const latest = useMemo(
     () => latestCandle(M1_CANDLES, timeframeIndex, indexAtOrBefore(currentTime)),
-    [timeframeIndex, currentTime],
+    [timeframeIndex, currentTime, dataVersion],
   );
 
   // Create the chart once.
@@ -93,7 +116,6 @@ export function ChartView() {
     );
     chartRef.current = chart;
 
-    // Canvas text is measured with whatever font is loaded at draw time: repaint once web fonts are ready.
     void document.fonts.ready.then(() => {
       if (chartRef.current === chart) chart.redraw();
     });
@@ -104,13 +126,14 @@ export function ChartView() {
     };
   }, []);
 
-  // News: only events that have already happened at the replay clock are shown.
   const newsMarkers = useMemo(() => {
     if (!newsVisible) return [];
     const now = usePlaybackStore.getState().currentTime;
     const shown = NEWS_EVENTS.filter((event) => event.time <= now && (minImpact === 'medium' || event.impact === 'high'));
-    return groupNewsMarkers(shown, TIMEFRAME_SECONDS[timeframe], { high: readCssColor('--bear'), medium: readCssColor('--warn') });
-    // `releasedNews` changes exactly when the clock passes an event; `theme` refreshes the colors.
+    return groupNewsMarkers(shown, TIMEFRAME_SECONDS[timeframe], {
+      high: readCssColor('--bear'),
+      medium: readCssColor('--warn'),
+    });
   }, [newsVisible, minImpact, releasedNews, timeframe, theme]);
 
   useEffect(() => {
@@ -118,7 +141,6 @@ export function ChartView() {
     setNewsFocus(null);
   }, [newsMarkers]);
 
-  // Drawings: the saved shapes, the active tool and its color.
   useEffect(() => {
     chartRef.current?.setDrawings(drawings);
   }, [drawings]);
@@ -130,10 +152,8 @@ export function ChartView() {
     chartRef.current?.setDrawingColor(drawColor);
   }, [drawColor]);
 
-  // Entry markers and SL / TP lines for open positions.
   usePositionOverlays(chartRef);
 
-  // Theme: re-read the CSS variables (the theme store has already updated the DOM).
   useEffect(() => {
     chartRef.current?.setTheme(readChartTheme());
   }, [theme]);
@@ -142,13 +162,13 @@ export function ChartView() {
     chartRef.current?.setCandleColors(colors);
   }, [colors]);
 
-  // Data: draw what the virtual clock has revealed, then follow it candle by candle.
+  // Data: redraw whenever the series finishes loading or the timeframe changes.
   useEffect(() => {
     const chart = chartRef.current;
-    if (!chart) return;
+    if (!chart || dataStatus !== 'ready') return;
 
     chart.setTimeframe(TIMEFRAME_SECONDS[timeframeIndex.timeframe], `${SYMBOL.symbol} · ${timeframeIndex.timeframe}`);
-    let cursor = -1; // M1 index the chart currently shows
+    let cursor = -1;
 
     const sync = (time: number) => {
       const next = indexAtOrBefore(time);
@@ -172,9 +192,8 @@ export function ChartView() {
     return usePlaybackStore.subscribe((state, previous) => {
       if (state.currentTime !== previous.currentTime) sync(state.currentTime);
     });
-  }, [timeframeIndex]);
+  }, [timeframeIndex, dataVersion, dataStatus]);
 
-  // Cut mode.
   useEffect(() => {
     chartRef.current?.setCutMode(cutMode);
     if (!cutMode) return;
@@ -187,7 +206,6 @@ export function ChartView() {
     if (!lockedCandle) return;
     const bucket = bucketIndexByTime(timeframeIndex, lockedCandle.time);
     if (bucket < 0) return;
-    // Cut after the chosen candle — but never forward of where the clock already is.
     const cursor = indexAtOrBefore(usePlaybackStore.getState().currentTime);
     const target = M1_CANDLES[Math.min(timeframeIndex.buckets[bucket].last, cursor)].time;
     usePlaybackStore.getState().jumpTo(target);
@@ -204,11 +222,13 @@ export function ChartView() {
       <div ref={containerRef} className="absolute inset-0" />
       <ChartLegend ohlc={hovered ?? latest} timeframe={timeframe} />
       <DrawingToolbar />
-      {MARKET_DATA_STATUS !== 'ready' && <ChartSkeleton error={MARKET_DATA_STATUS === 'error'} />}
+      {dataStatus !== 'ready' && <ChartSkeleton error={dataStatus === 'error'} />}
 
       {tool !== 'cursor' && !cutMode && (
         <p className="pointer-events-none absolute bottom-10 left-2 right-24 z-10 truncate rounded-lg bg-surface/90 px-3 py-1.5 text-xs text-ink-muted shadow-overlay sm:right-auto sm:max-w-md">
-          <span className="font-medium text-ink">{DRAWING_TOOLS.find((item) => item.id === tool)?.label}.</span> {DRAWING_TOOLS.find((item) => item.id === tool)?.hint} <span className="hidden sm:inline">Esc to stop.</span>
+          <span className="font-medium text-ink">{DRAWING_TOOLS.find((item) => item.id === tool)?.label}.</span>{' '}
+          {DRAWING_TOOLS.find((item) => item.id === tool)?.hint}{' '}
+          <span className="hidden sm:inline">Esc to stop.</span>
         </p>
       )}
 
@@ -225,7 +245,14 @@ export function ChartView() {
         />
       )}
 
-      {newsFocus && <NewsCard ids={newsFocus.ids} x={newsFocus.x} y={newsFocus.y} containerWidth={containerRef.current?.clientWidth ?? 600} />}
+      {newsFocus && (
+        <NewsCard
+          ids={newsFocus.ids}
+          x={newsFocus.x}
+          y={newsFocus.y}
+          containerWidth={containerRef.current?.clientWidth ?? 600}
+        />
+      )}
 
       {!atLatest && !cutMode && (
         <button
@@ -251,7 +278,9 @@ export function ChartView() {
               {lockedCandle ? 'Cut after this candle?' : 'Tap a candle to choose where to cut'}
             </p>
             <p className="truncate font-mono text-xs tabular-nums text-ink-muted">
-              {lockedCandle ? `${formatVirtualTime(lockedCandle.time)} UTC` : 'Everything after the line is removed. Your account is unchanged.'}
+              {lockedCandle
+                ? `${formatVirtualTime(lockedCandle.time)} UTC`
+                : 'Everything after the line is removed. Your account is unchanged.'}
             </p>
           </div>
           <button
