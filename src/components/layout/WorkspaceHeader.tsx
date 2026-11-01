@@ -1,4 +1,4 @@
-import { ArrowLeft, PanelRight, Settings } from 'lucide-react';
+import { ArrowLeft, Check, PanelRight, Settings } from 'lucide-react';
 import { ChallengeChip } from '@/components/challenge/ChallengeChip';
 import { IconButton } from '@/components/ui/IconButton';
 import { PairSwitcher } from './PairSwitcher';
@@ -22,10 +22,24 @@ export function WorkspaceHeader() {
   const floatingPnl = useGradual(useTradingStore((s) => s.floatingPnl));
   const balance = useTradingStore((s) => s.balance);
   const equity = useTradingStore((s) => s.equity);
+  const closed = useTradingStore((s) => s.closedTrades);
   const currentTime = usePlaybackStore((s) => s.currentTime);
   const timeframe = usePlaybackStore((s) => s.timeframe);
   const activeId = useBacktestStore((s) => s.activeSessionId);
   const session = useBacktestStore((s) => s.sessions.find((x) => x.id === activeId));
+  const updateSession = useBacktestStore((s) => s.updateSession);
+
+  const completeBacktest = () => {
+    if (activeId) {
+      const netPnl = closed.reduce((sum, t) => sum + t.pnl, 0);
+      updateSession(activeId, {
+        status: 'completed',
+        tradeCount: closed.length,
+        netPnl,
+      });
+    }
+    setView('analytics');
+  };
 
   return (
     <header className="flex h-12 shrink-0 items-center gap-2 border-b border-line bg-surface px-2 pt-[env(safe-area-inset-top)] md:gap-3 md:px-3">
@@ -58,6 +72,17 @@ export function WorkspaceHeader() {
       <PairSwitcher />
 
       <div className="flex items-center gap-0.5">
+        {activeId && session?.status !== 'completed' && (
+          <button
+            type="button"
+            onClick={completeBacktest}
+            className="mr-1 hidden h-8 items-center gap-1 rounded-md border border-line px-2 text-xs font-medium text-ink hover:bg-overlay sm:inline-flex"
+            title="Mark this experiment complete and open Analytics"
+          >
+            <Check size={14} />
+            Complete
+          </button>
+        )}
         <ChallengeChip />
         <ThemeToggle />
         <IconButton label="Settings" onClick={() => openSettings()}>
