@@ -1,18 +1,25 @@
+import { useEffect } from 'react';
 import { BreachAlert } from '@/components/challenge/BreachAlert';
 import { AppShell } from '@/components/layout/AppShell';
 import { SettingsModal } from '@/components/settings/SettingsModal';
 import { ShortcutsPanel } from '@/components/settings/ShortcutsPanel';
 import { ToastViewport } from '@/components/ui/ToastViewport';
+import { bootstrapMarketData } from '@/data/marketData';
 import { usePlaybackEngine } from '@/hooks/usePlaybackEngine';
 import { usePropEngine } from '@/hooks/usePropEngine';
 import { useShortcuts } from '@/hooks/useShortcuts';
 import { useTradingEngine } from '@/hooks/useTradingEngine';
 
 export default function App() {
+  useEffect(() => {
+    void bootstrapMarketData('EURUSD');
+  }, []);
+
   usePlaybackEngine();
   useTradingEngine();
   usePropEngine();
   useShortcuts();
+
   return (
     <>
       <AppShell />
