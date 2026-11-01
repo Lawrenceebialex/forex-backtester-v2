@@ -70,10 +70,10 @@ export function PerformanceView() {
             action={
               <button
                 type="button"
-                onClick={() => setView('chart')}
+                onClick={() => setView('workspace')}
                 className="h-10 rounded-lg bg-accent px-4 text-sm font-medium text-accent-ink transition hover:brightness-110"
               >
-                Go to the chart
+                Open chart session
               </button>
             }
           >
