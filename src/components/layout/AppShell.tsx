@@ -1,5 +1,6 @@
 import { useEffect } from 'react';
 import { ChartArea } from '@/components/chart/ChartArea';
+import { MarketsView } from '@/components/markets/MarketsView';
 import { ChallengeView } from '@/components/challenge/ChallengeView';
 import { ComparisonView } from '@/components/comparison/ComparisonView';
 import { PerformanceView } from '@/components/performance/PerformanceView';
@@ -12,21 +13,11 @@ import { DESKTOP_QUERY, useUiStore } from '@/stores/uiStore';
 import { BottomNav } from './BottomNav';
 import { Header } from './Header';
 
-/**
- *  Header (logo · tabs on iPad/desktop · actions)
- *  Chart view:  chart + docked trading panel, playback bar
- *  Other views: scrolling page
- *  Bottom tab bar on phones
- *
- * The chart view stays mounted while you visit other tabs, so zoom, position and
- * the replay all survive the trip.
- */
 export function AppShell() {
   const view = useUiStore((state) => state.view);
   const isDocked = useMediaQuery(DESKTOP_QUERY);
   const setTradingPanelOpen = useUiStore((state) => state.setTradingPanelOpen);
 
-  // Crossing the docking breakpoint: docked panels start open, overlays start closed.
   useEffect(() => {
     setTradingPanelOpen(isDocked);
   }, [isDocked, setTradingPanelOpen]);
@@ -45,6 +36,7 @@ export function AppShell() {
 
       {view !== 'chart' && (
         <main key={view} className="min-h-0 flex-1 animate-fade-in overflow-y-auto overscroll-contain">
+          {view === 'markets' && <MarketsView />}
           {view === 'strategies' && <StrategiesView />}
           {view === 'performance' && <PerformanceView />}
           {view === 'comparison' && <ComparisonView />}

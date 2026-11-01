@@ -9,6 +9,7 @@ import { useUiStore } from '@/stores/uiStore';
 import { Logo } from './Logo';
 import { NavTabs } from './NavTabs';
 import { NAV_ITEMS } from './navItems';
+import { PairSwitcher } from './PairSwitcher';
 import { ThemeToggle } from './ThemeToggle';
 
 export function Header() {
@@ -26,8 +27,12 @@ export function Header() {
         <div className="flex items-center gap-2.5">
           <Logo />
           <span className="hidden text-[15px] font-semibold tracking-tight text-ink lg:block">Forex Backtester</span>
-          <h1 className="text-[15px] font-semibold tracking-tight text-ink md:hidden">{NAV_ITEMS.find((item) => item.id === view)?.label}</h1>
+          <h1 className="text-[15px] font-semibold tracking-tight text-ink md:hidden">
+            {NAV_ITEMS.find((item) => item.id === view)?.label}
+          </h1>
         </div>
+
+        <PairSwitcher />
 
         <NavTabs />
 
@@ -43,7 +48,10 @@ export function Header() {
             <Settings size={18} />
           </IconButton>
           {onChart && openPositions > 0 && (
-            <span className={cn('ml-1 font-mono text-xs font-medium tabular-nums', pnlTone(floatingPnl))} aria-label={`Floating profit and loss across ${openPositions} open positions`}>
+            <span
+              className={cn('ml-1 font-mono text-xs font-medium tabular-nums', pnlTone(floatingPnl))}
+              aria-label={`Floating profit and loss across ${openPositions} open positions`}
+            >
               {formatSignedMoney(floatingPnl)}
             </span>
           )}
