@@ -7,6 +7,11 @@ import {
   REPLAY_RANGE,
   bootstrapMarketData,
 } from '@/data/marketData';
+import { usePlaybackEngine } from '@/hooks/usePlaybackEngine';
+import { usePropEngine } from '@/hooks/usePropEngine';
+import { useSessionSync } from '@/hooks/useSessionSync';
+import { useShortcuts } from '@/hooks/useShortcuts';
+import { useTradingEngine } from '@/hooks/useTradingEngine';
 import { useAuthStore } from '@/stores/authStore';
 import { usePlaybackStore } from '@/stores/playbackStore';
 
@@ -22,19 +27,8 @@ function seedTester() {
   }
 }
 
-/**
- * Engines mount only after the user leaves the landing page.
- * That avoids any store/subscribe loops during first paint.
- */
+/** Engines only run after the user leaves the landing page. */
 function AppEngines() {
-  // Lazy-require style: call hooks only when this component is mounted.
-  // eslint-disable-next-line @typescript-eslint/no-require-imports
-  const { usePlaybackEngine } = require('@/hooks/usePlaybackEngine') as typeof import('@/hooks/usePlaybackEngine');
-  const { useTradingEngine } = require('@/hooks/useTradingEngine') as typeof import('@/hooks/useTradingEngine');
-  const { useSessionSync } = require('@/hooks/useSessionSync') as typeof import('@/hooks/useSessionSync');
-  const { usePropEngine } = require('@/hooks/usePropEngine') as typeof import('@/hooks/usePropEngine');
-  const { useShortcuts } = require('@/hooks/useShortcuts') as typeof import('@/hooks/useShortcuts');
-
   usePlaybackEngine();
   useTradingEngine();
   useSessionSync();
