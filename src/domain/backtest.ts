@@ -7,10 +7,10 @@ export interface BacktestConfig {
   name: string;
   instrument: PairId;
   timeframe: Timeframe;
-  rangeFrom: number | null;
-  rangeTo: number | null;
+  rangeFrom: string | number | null;
+  rangeTo: string | number | null;
   initialBalance: number;
-  currency: 'USD';
+  currency: 'USD' | 'NGN';
   riskPerTradePercent: number;
   leverage: number;
   spreadPips: number;
