@@ -1,15 +1,20 @@
 /**
- * Standard forex sessions and ICT-style killzones in UTC (winter baseline).
+ * Standard forex sessions and ICT-style killzones in UTC (winter / EST+5 baseline).
+ * Killzones are approximate institutional windows traders use for confluence —
+ * not a guarantee of direction.
  */
 
 export interface SessionWindow {
   id: string;
   label: string;
+  /** Start hour inclusive, UTC 0–23 */
   startHourUtc: number;
+  /** End hour exclusive, UTC 0–24 */
   endHourUtc: number;
   color: string;
 }
 
+/** Full trading sessions */
 export const MARKET_SESSIONS: SessionWindow[] = [
   { id: 'asia', label: 'Asia', startHourUtc: 0, endHourUtc: 9, color: 'rgba(99,102,241,0.12)' },
   { id: 'london', label: 'London', startHourUtc: 7, endHourUtc: 16, color: 'rgba(34,197,94,0.12)' },
@@ -17,6 +22,7 @@ export const MARKET_SESSIONS: SessionWindow[] = [
   { id: 'overlap', label: 'London–NY', startHourUtc: 12, endHourUtc: 16, color: 'rgba(234,179,8,0.14)' },
 ];
 
+/** ICT-style killzones (NY-local mapped to UTC winter) */
 export const KILLZONES: SessionWindow[] = [
   { id: 'kz-asia', label: 'Asia KZ', startHourUtc: 1, endHourUtc: 3, color: 'rgba(99,102,241,0.18)' },
   { id: 'kz-london', label: 'London KZ', startHourUtc: 7, endHourUtc: 10, color: 'rgba(34,197,94,0.18)' },
@@ -27,6 +33,7 @@ export const KILLZONES: SessionWindow[] = [
 export interface CustomCrossTime {
   id: string;
   label: string;
+  /** Minutes from midnight UTC 0–1439 */
   minuteUtc: number;
 }
 

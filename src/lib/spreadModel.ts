@@ -26,10 +26,12 @@ export function simulatedSpreadPips(
   time: UnixSeconds,
   symbol: string,
   newsWiden = false,
+  newsTrading = false,
 ): number {
   const base = BASE[symbol] ?? 0.3;
   const hour = Math.floor(((time % 86_400) + 86_400) % 86_400 / 3_600);
-  const mult = sessionMultiplier(hour) * (newsWiden ? 2.5 : 1);
+  const newsMult = newsWiden ? (newsTrading ? 4.0 : 2.5) : 1;
+  const mult = sessionMultiplier(hour) * newsMult;
   const hash = Math.imul(Math.floor(time / 60) | 0, 2654435761) >>> 0;
   const jitter = ((hash >>> 8) % 1000) / 500 - 1;
   return roundTo(Math.max(0.1, base * mult * (1 + 0.15 * jitter)), 1);
@@ -41,8 +43,9 @@ export function resolveSpreadPips(
   symbol: string,
   fixedPips: number,
   nearNews = false,
+  newsTrading = false,
 ): number {
   if (mode === 'off') return 0;
   if (mode === 'fixed') return Math.max(0, fixedPips);
-  return simulatedSpreadPips(time, symbol, nearNews);
+  return simulatedSpreadPips(time, symbol, nearNews, newsTrading);
 }

@@ -15,6 +15,7 @@ export interface BacktestConfig {
   leverage: number;
   spreadPips: number;
   commissionPerLot: number;
+  /** Optional — trades can run without a named strategy */
   strategyId: string;
 }
 

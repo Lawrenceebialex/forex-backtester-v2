@@ -6,10 +6,13 @@ interface ChartOverlayState {
   showSessions: boolean;
   showKillzones: boolean;
   showMajorNews: boolean;
+  /** Amplifies spread around news + stronger approaching alerts */
+  newsTradingMode: boolean;
   customCrosses: CustomCrossTime[];
   setShowSessions: (v: boolean) => void;
   setShowKillzones: (v: boolean) => void;
   setShowMajorNews: (v: boolean) => void;
+  setNewsTradingMode: (v: boolean) => void;
   addCustomCross: (label: string, minuteUtc: number) => void;
   removeCustomCross: (id: string) => void;
 }
@@ -20,10 +23,12 @@ export const useChartOverlayStore = create<ChartOverlayState>()(
       showSessions: false,
       showKillzones: false,
       showMajorNews: true,
+      newsTradingMode: false,
       customCrosses: [],
       setShowSessions: (showSessions) => set({ showSessions }),
       setShowKillzones: (showKillzones) => set({ showKillzones }),
       setShowMajorNews: (showMajorNews) => set({ showMajorNews }),
+      setNewsTradingMode: (newsTradingMode) => set({ newsTradingMode }),
       addCustomCross: (label, minuteUtc) =>
         set((s) => ({
           customCrosses: [
