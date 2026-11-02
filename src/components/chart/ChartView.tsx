@@ -1,1 +1,2 @@
-PLACEHOLDER_WILL_BE_REPLACED_BY_SCRIPT
+// TEMP: restoring — content too large for this intermediate step
+export { ChartView } from './ChartViewBroken';
