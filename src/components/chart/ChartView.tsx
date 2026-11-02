@@ -33,21 +33,20 @@ import { usePlaybackStore } from '@/stores/playbackStore';
 import { useThemeStore } from '@/stores/themeStore';
 import { useToastStore } from '@/stores/toastStore';
 import { useUiStore } from '@/stores/uiStore';
+import { useChartTradeStore } from '@/stores/chartTradeStore';
+import { useTradingStore } from '@/stores/tradingStore';
 import { NewsCard } from '@/components/news/NewsCard';
 import { ChartLegend, sameOhlc, type Ohlc } from './ChartLegend';
 import { ChartSkeleton } from './ChartSkeleton';
 import { usePositionOverlays } from './usePositionOverlays';
 import { ChartAccountHud } from './ChartAccountHud';
 
-/** Above this many newly opened candles in one tick, redraw with setData instead of update(). */
 const MAX_INCREMENTAL_CANDLES = 200;
 
 function useMarketDataVersion(): number {
   return useSyncExternalStore(
     subscribeMarketData,
-    () => {
-      return (M1_CANDLES.length << 2) ^ (MARKET_DATA_STATUS === 'ready' ? 1 : MARKET_DATA_STATUS === 'error' ? 2 : 0);
-    },
+    () => (M1_CANDLES.length << 2) ^ (MARKET_DATA_STATUS === 'ready' ? 1 : MARKET_DATA_STATUS === 'error' ? 2 : 0),
     () => 0,
   );
 }
@@ -79,10 +78,7 @@ export function ChartView() {
   const minImpact = useNewsStore((state) => state.minImpact);
   const releasedNews = usePlaybackStore((state) => countReleased(NEWS_EVENTS, state.currentTime));
 
-  const timeframeIndex = useMemo(
-    () => buildTimeframeIndex(M1_CANDLES, timeframe),
-    [timeframe, dataVersion],
-  );
+  const timeframeIndex = useMemo(() => buildTimeframeIndex(M1_CANDLES, timeframe), [timeframe, dataVersion]);
   const latest = useMemo(
     () => latestCandle(M1_CANDLES, timeframeIndex, indexAtOrBefore(currentTime)),
     [timeframeIndex, currentTime, dataVersion],
@@ -113,15 +109,34 @@ export function ChartView() {
         onDrawingErase: (id) => useDrawingStore.getState().remove(id),
         onDrawingSelect: (id) => useDrawingStore.getState().select(id),
         onTextRequest: setTextRequest,
+        onPriceTap: (price) => useChartTradeStore.getState().pick(price),
+        onOverlayLineDrag: ({ id, role, price }) => {
+          const trade = useTradingStore.getState();
+          if (role === 'pending') {
+            trade.modifyPendingPrice(id, price);
+            return;
+          }
+          const position = trade.positions.find((p) => p.id === id);
+          if (position) {
+            const sl = role === 'sl' ? price : position.stopLoss;
+            const tp = role === 'tp' ? price : position.takeProfit;
+            trade.modifyPositionStops(id, sl, tp);
+            return;
+          }
+          const pending = trade.pendingOrders.find((p) => p.id === id);
+          if (pending) {
+            const sl = role === 'sl' ? price : pending.stopLoss;
+            const tp = role === 'tp' ? price : pending.takeProfit;
+            trade.modifyPendingStops(id, sl, tp);
+          }
+        },
         onVisibleRangeChange: (range) => usePlaybackStore.getState().setVisibleRange(range),
       },
     );
     chartRef.current = chart;
-
     void document.fonts.ready.then(() => {
       if (chartRef.current === chart) chart.redraw();
     });
-
     return () => {
       chart.destroy();
       chartRef.current = null;
@@ -156,6 +171,11 @@ export function ChartView() {
 
   usePositionOverlays(chartRef);
 
+  const chartTradeMode = useChartTradeStore((s) => s.mode);
+  useEffect(() => {
+    chartRef.current?.setPricePickMode(chartTradeMode != null);
+  }, [chartTradeMode]);
+
   useEffect(() => {
     chartRef.current?.setTheme(readChartTheme());
   }, [theme]);
@@ -167,20 +187,16 @@ export function ChartView() {
   useEffect(() => {
     const chart = chartRef.current;
     if (!chart || dataStatus !== 'ready') return;
-
     chart.setTimeframe(TIMEFRAME_SECONDS[timeframeIndex.timeframe], `${SYMBOL.symbol} · ${timeframeIndex.timeframe}`);
     let cursor = -1;
-
     const sync = (time: number) => {
       const next = indexAtOrBefore(time);
       if (next === cursor) return;
-
       const goingBack = next < cursor;
       const needsRedraw =
         cursor < 0 ||
         goingBack ||
         bucketIndexAt(timeframeIndex, next) - bucketIndexAt(timeframeIndex, cursor) > MAX_INCREMENTAL_CANDLES;
-
       if (needsRedraw) {
         chart.setData(visibleCandles(M1_CANDLES, timeframeIndex, next), { reframe: cursor < 0 || goingBack });
       } else {
@@ -188,7 +204,6 @@ export function ChartView() {
       }
       cursor = next;
     };
-
     sync(usePlaybackStore.getState().currentTime);
     return usePlaybackStore.subscribe((state, previous) => {
       if (state.currentTime !== previous.currentTime) sync(state.currentTime);
@@ -204,6 +219,7 @@ export function ChartView() {
         setCutMode(false);
         useDrawingStore.getState().setTool('cursor');
         useDrawingStore.getState().select(null);
+        useChartTradeStore.getState().clearPick();
         chartRef.current?.setTool('cursor');
         return;
       }
@@ -238,6 +254,19 @@ export function ChartView() {
     <div className="relative min-h-0 flex-1 bg-chart">
       <div ref={containerRef} className="absolute inset-0" />
       <ChartAccountHud />
+      {chartTradeMode && (
+        <div className="pointer-events-none absolute inset-x-0 top-12 z-30 flex justify-center px-3 sm:top-14">
+          <p className="rounded-full border border-accent/40 bg-accent/15 px-3 py-1 text-[11px] font-medium text-accent shadow-overlay">
+            Tap the chart to set{' '}
+            {chartTradeMode === 'limit-price'
+              ? 'limit'
+              : chartTradeMode === 'stop-price'
+                ? 'stop'
+                : chartTradeMode}{' '}
+            price
+          </p>
+        </div>
+      )}
       <ChartLegend ohlc={hovered ?? latest} timeframe={timeframe} />
       <DrawingToolbar />
       {dataStatus !== 'ready' && <ChartSkeleton error={dataStatus === 'error'} />}
