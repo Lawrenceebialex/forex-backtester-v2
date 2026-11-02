@@ -4,6 +4,7 @@ import { usePlaybackStore } from '@/stores/playbackStore';
 import { useUiStore } from '@/stores/uiStore';
 import { ToolbarButton } from '@/components/ui/ToolbarButton';
 import { ChartView } from './ChartView';
+import { ChartOverlaysMenu } from './ChartOverlaysMenu';
 import { NewsButton } from '@/components/news/NewsButton';
 import { JumpToDate } from './JumpToDate';
 import { TimeframeSelector } from './TimeframeSelector';
@@ -32,13 +33,14 @@ export function ChartArea() {
         <NewsButton />
         <ToolbarButton
           icon={Scissors}
-          label="Cut chart"
+          label="Cut time"
           active={cutMode}
           onClick={() => {
             pause();
             setCutMode(!cutMode);
           }}
         />
+        <ChartOverlaysMenu />
         <ReplayStatus />
       </div>
       <ChartView />

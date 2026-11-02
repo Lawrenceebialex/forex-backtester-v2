@@ -10,6 +10,7 @@ import { PlaybackBar } from '@/components/playback/PlaybackBar';
 import { StrategiesView } from '@/components/strategies/StrategiesView';
 import { SettingsView } from '@/components/settings/SettingsView';
 import { TradingPanel } from '@/components/trading/TradingPanel';
+import { MobileTradeBar } from '@/components/trading/MobileTradeBar';
 import { useMediaQuery } from '@/hooks/useMediaQuery';
 import { DESKTOP_QUERY, useUiStore } from '@/stores/uiStore';
 import { BottomNav } from './BottomNav';
@@ -48,6 +49,7 @@ export function AppShell() {
               {showPanel ? <TradingPanel /> : null}
             </main>
             <PlaybackBar />
+            <MobileTradeBar />
           </>
         ) : (
           <>
