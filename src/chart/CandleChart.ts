@@ -1,1 +1,1 @@
-SEE_FILE:/tmp/CandleChart_final.ts
+PLACEHOLDER_WILL_REPLACE_VIA_API
