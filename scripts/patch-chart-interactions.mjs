@@ -1,5 +1,6 @@
 /**
  * Build-time patch: TradingView-style price-axis zoom + crosshair magnet.
+ * Works with CandleChart that already has line-drag gesture for pending/SL/TP.
  */
 import { readFileSync, writeFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
@@ -14,18 +15,21 @@ if (text.includes("kind: 'priceScale'")) {
   process.exit(0);
 }
 
+// Current Gesture type includes line-drag (pending/SL/TP drag on chart).
 const oldGesture = `type Gesture =
   | { kind: 'pan'; startX: number; startEdge: number; moved: boolean; samples: Array<{ x: number; t: number }> }
   | { kind: 'pinch'; startDistance: number; startSpacing: number; anchorIndex: number; anchorX: number }
   | { kind: 'draw'; start: ChartPoint; startPx: Point; moved: boolean; fromPending: boolean }
-  | { kind: 'drag'; origin: Drawing; part: HitPart; grab: ChartPoint; startPx: Point; moved: boolean };`;
+  | { kind: 'drag'; origin: Drawing; part: HitPart; grab: ChartPoint; startPx: Point; moved: boolean }
+  | { kind: 'line-drag'; id: string; role: 'pending' | 'sl' | 'tp'; color: string; title: string; dashed: boolean; startPx: Point; price: number; moved: boolean };`;
 
 const newGesture = `type Gesture =
   | { kind: 'pan'; startX: number; startEdge: number; moved: boolean; samples: Array<{ x: number; t: number }> }
   | { kind: 'pinch'; startDistance: number; startSpacing: number; anchorIndex: number; anchorX: number }
   | { kind: 'priceScale'; startY: number; startMin: number; startMax: number; moved: boolean }
   | { kind: 'draw'; start: ChartPoint; startPx: Point; moved: boolean; fromPending: boolean }
-  | { kind: 'drag'; origin: Drawing; part: HitPart; grab: ChartPoint; startPx: Point; moved: boolean };`;
+  | { kind: 'drag'; origin: Drawing; part: HitPart; grab: ChartPoint; startPx: Point; moved: boolean }
+  | { kind: 'line-drag'; id: string; role: 'pending' | 'sl' | 'tp'; color: string; title: string; dashed: boolean; startPx: Point; price: number; moved: boolean };`;
 
 if (!text.includes(oldGesture)) {
   console.error('[patch-chart] gesture type not found');
