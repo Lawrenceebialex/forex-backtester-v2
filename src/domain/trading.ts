@@ -2,6 +2,9 @@ import type { UnixSeconds } from './market';
 
 export type Side = 'buy' | 'sell';
 
+/** Market fills now; limit/stop wait for price. */
+export type OrderType = 'market' | 'limit' | 'stop';
+
 /** A stop-loss / take-profit entered either as an absolute price or as a distance in pips. */
 export type StopUnit = 'price' | 'pips';
 export interface StopInput {
@@ -14,9 +17,16 @@ export interface OrderRequest {
   lots: number;
   stopLoss: StopInput | null;
   takeProfit: StopInput | null;
+  /** Defaults to market. */
+  orderType?: OrderType;
+  /** Required for limit / stop. Absolute price. */
+  limitPrice?: number | null;
 }
 
-export type OrderResult = { ok: true; position: Position } | { ok: false; error: string };
+export type OrderResult =
+  | { ok: true; position: Position }
+  | { ok: true; pending: PendingOrder }
+  | { ok: false; error: string };
 
 export interface Position {
   id: string;
@@ -29,6 +39,22 @@ export interface Position {
   stopLoss: number | null;
   takeProfit: number | null;
   /** The strategy that was active when the trade was opened. */
+  strategyId: string;
+}
+
+/** Working order that has not filled yet (MT5 pending). */
+export interface PendingOrder {
+  id: string;
+  number: number;
+  side: Side;
+  /** limit = fill when price is favourable; stop = fill when price breaks through. */
+  orderType: 'limit' | 'stop';
+  lots: number;
+  /** Trigger / limit price. */
+  price: number;
+  stopLoss: number | null;
+  takeProfit: number | null;
+  createdAt: UnixSeconds;
   strategyId: string;
 }
 
@@ -99,6 +125,17 @@ export function isPosition(value: unknown): value is Position {
     typeof v === 'object' && v !== null &&
     typeof v.id === 'string' && isNumber(v.number) && (v.side === 'buy' || v.side === 'sell') &&
     isNumber(v.lots) && isNumber(v.entryPrice) && isNumber(v.entryTime) &&
+    isLevel(v.stopLoss) && isLevel(v.takeProfit) && typeof v.strategyId === 'string'
+  );
+}
+
+export function isPendingOrder(value: unknown): value is PendingOrder {
+  const v = value as Partial<PendingOrder> | null;
+  return (
+    typeof v === 'object' && v !== null &&
+    typeof v.id === 'string' && isNumber(v.number) && (v.side === 'buy' || v.side === 'sell') &&
+    (v.orderType === 'limit' || v.orderType === 'stop') &&
+    isNumber(v.lots) && isNumber(v.price) && isNumber(v.createdAt) &&
     isLevel(v.stopLoss) && isLevel(v.takeProfit) && typeof v.strategyId === 'string'
   );
 }
