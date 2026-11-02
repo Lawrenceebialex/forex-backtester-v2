@@ -16,7 +16,7 @@ export function ChartAccountHud() {
   const pendingCount = useTradingStore((s) => s.pendingOrders.length);
 
   return (
-    <div className="pointer-events-none absolute left-2 top-10 z-10 flex max-w-[min(100%,20rem)] flex-wrap gap-x-3 gap-y-1 rounded-lg border border-line/80 bg-surface/90 px-2.5 py-1.5 text-[11px] shadow-overlay backdrop-blur-sm sm:top-12">
+    <div className="pointer-events-none absolute right-2 top-2 z-30 flex max-w-[min(100%,18rem)] flex-wrap justify-end gap-x-2.5 gap-y-0.5 rounded-lg border border-line/80 bg-surface/95 px-2.5 py-1.5 text-[11px] shadow-overlay backdrop-blur-sm sm:right-3 sm:top-3">
       <span className="font-mono tabular-nums text-ink">
         <span className="text-ink-subtle">Bal </span>
         {formatMoney(balance)}
