@@ -18,6 +18,8 @@ export function DrawingToolbar() {
   const setTool = useDrawingStore((state) => state.setTool);
   const setColor = useDrawingStore((state) => state.setColor);
   const count = useDrawingStore((state) => state.drawings.filter((d) => d.symbol === SYMBOL.symbol).length);
+  const selectedId = useDrawingStore((state) => state.selectedId);
+  const removeSelected = useDrawingStore((state) => state.removeSelected);
   const clearAll = useDrawingStore((state) => state.clearAll);
   const [open, setOpen] = useState(() => window.matchMedia('(min-width: 768px)').matches);
   const [confirming, setConfirming] = useState(false);
@@ -66,6 +68,17 @@ export function DrawingToolbar() {
           </div>
 
           <div className="my-1 h-px bg-line" />
+          {selectedId && (
+            <button
+              type="button"
+              title="Delete selected drawing"
+              aria-label="Delete selected drawing"
+              onClick={() => removeSelected()}
+              className={cn(BUTTON, 'bg-bear/15 text-bear hover:bg-bear hover:text-white')}
+            >
+              <Trash2 size={17} />
+            </button>
+          )}
           {confirming ? (
             <button
               type="button"
