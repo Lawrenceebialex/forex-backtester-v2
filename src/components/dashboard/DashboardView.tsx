@@ -1,3 +1,4 @@
+import { useMemo } from 'react';
 import { FlaskConical, FolderKanban, Target } from 'lucide-react';
 import { SYMBOL } from '@/data/marketData';
 import { computeStatistics } from '@/lib/statistics';
@@ -13,11 +14,14 @@ export function DashboardView() {
   const displayName = useAuthStore((s) => s.user?.displayName ?? 'trader');
   const closed = useTradingStore((s) => s.closedTrades);
   const balance = useTradingStore((s) => s.balance);
-  const strategies = useStrategyStore((s) => s.strategies.filter((x) => !x.archived));
+  // IMPORTANT: never filter/map inside a Zustand selector.
+  // A new array each call fails Object.is and causes React #185 with useSyncExternalStore.
+  const allStrategies = useStrategyStore((s) => s.strategies);
+  const strategies = useMemo(() => allStrategies.filter((x) => !x.archived), [allStrategies]);
   const sessions = useBacktestStore((s) => s.sessions);
   const setActive = useBacktestStore((s) => s.setActive);
 
-  const stats = computeStatistics(closed, balance, SYMBOL);
+  const stats = useMemo(() => computeStatistics(closed, balance, SYMBOL), [closed, balance]);
   const hasActivity = closed.length > 0 || sessions.length > 0;
   const today = new Date().toLocaleDateString(undefined, {
     weekday: 'short',
@@ -26,7 +30,7 @@ export function DashboardView() {
     year: 'numeric',
   });
 
-  const bestStrategy = (() => {
+  const bestStrategy = useMemo(() => {
     if (closed.length === 0) return null;
     let best: { name: string; net: number } | null = null;
     for (const s of strategies) {
@@ -36,7 +40,7 @@ export function DashboardView() {
       if (!best || st.netProfit > best.net) best = { name: s.name, net: st.netProfit };
     }
     return best;
-  })();
+  }, [closed, balance, strategies]);
 
   return (
     <div className="mx-auto max-w-5xl px-4 py-6 pb-24 lg:px-8">
