@@ -1,11 +1,11 @@
-import { useTradingStore } from '@/stores/tradingStore';
-import { usePreferencesStore } from '@/stores/preferencesStore';
-import { formatPrice } from '@/lib/format';
 import { SYMBOL } from '@/data/marketData';
+import { formatPrice } from '@/lib/format';
+import { usePreferencesStore } from '@/stores/preferencesStore';
+import { useTradingStore } from '@/stores/tradingStore';
 
 /**
- * Always-visible Buy / Sell strip for phones (MT5-style).
- * Market orders at the preferred lot size.
+ * Always-visible buy/sell strip on phones (MT5 one-tap style).
+ * Full Limit/Stop + SL/TP live in the Trade panel Order ticket.
  */
 export function MobileTradeBar() {
   const quote = useTradingStore((s) => s.quote);
@@ -33,7 +33,7 @@ export function MobileTradeBar() {
         onClick={sell}
         className="flex h-14 min-w-0 flex-1 flex-col items-center justify-center rounded-lg bg-bear text-white active:brightness-90"
       >
-        <span className="text-[11px] font-semibold uppercase tracking-wide opacity-95">Sell</span>
+        <span className="text-[11px] font-semibold uppercase tracking-wide opacity-95">Market Sell</span>
         <span className="font-mono text-sm font-bold tabular-nums leading-tight">
           {formatPrice(quote.bid, SYMBOL)}
         </span>
@@ -64,7 +64,7 @@ export function MobileTradeBar() {
         onClick={buy}
         className="flex h-14 min-w-0 flex-1 flex-col items-center justify-center rounded-lg bg-bull text-white active:brightness-90"
       >
-        <span className="text-[11px] font-semibold uppercase tracking-wide opacity-95">Buy</span>
+        <span className="text-[11px] font-semibold uppercase tracking-wide opacity-95">Market Buy</span>
         <span className="font-mono text-sm font-bold tabular-nums leading-tight">
           {formatPrice(quote.ask, SYMBOL)}
         </span>
