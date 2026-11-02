@@ -7,6 +7,7 @@ import { marginFor, pipValue } from '@/lib/trading';
 import { usePreferencesStore } from '@/stores/preferencesStore';
 import { useStrategyStore } from '@/stores/strategyStore';
 import { useTradingStore } from '@/stores/tradingStore';
+import { useChartTradeStore } from '@/stores/chartTradeStore';
 import { NumberStepper } from '@/components/ui/NumberStepper';
 import { SegmentedControl } from '@/components/ui/SegmentedControl';
 import { Select } from '@/components/ui/Select';
@@ -23,6 +24,12 @@ const TYPE_OPTIONS = [
   { value: 'limit', label: 'Limit' },
   { value: 'stop', label: 'Stop' },
 ] as const;
+
+const TYPE_HINT: Record<OrderType, string> = {
+  market: 'Fills immediately at bid/ask (spread applied).',
+  limit: 'Waits for price to reach your level — Buy limit below market, Sell limit above.',
+  stop: 'Triggers when price breaks through — Buy stop above market, Sell stop below.',
+};
 
 function parseStop(text: string, unit: StopUnit): StopInput | null | undefined {
   if (text.trim() === '') return null;
@@ -94,6 +101,19 @@ export function OrderTicket() {
   const [stopLoss, setStopLoss] = useState('');
   const [takeProfit, setTakeProfit] = useState('');
   const [error, setError] = useState<string | null>(null);
+  const chartMode = useChartTradeStore((s) => s.mode);
+  const pickedPrice = useChartTradeStore((s) => s.pickedPrice);
+  const setChartMode = useChartTradeStore((s) => s.setMode);
+  const clearPick = useChartTradeStore((s) => s.clearPick);
+
+  useEffect(() => {
+    if (pickedPrice == null || !Number.isFinite(pickedPrice)) return;
+    if (orderType === 'limit' || orderType === 'stop') {
+      setLimitPrice(pickedPrice.toFixed(SYMBOL.pricePrecision));
+      clearPick();
+      setError(null);
+    }
+  }, [pickedPrice, orderType, clearPick]);
 
   const isPending = orderType !== 'market';
   const refPrice = Number(limitPrice.replace(',', '.'));
@@ -131,6 +151,7 @@ export function OrderTicket() {
       setStopLoss('');
       setTakeProfit('');
       if (isPending) setLimitPrice('');
+      clearPick();
     } else {
       setError(result.error);
     }
@@ -139,10 +160,16 @@ export function OrderTicket() {
   const clearError = () => setError(null);
   const sellPrice = isPending && Number.isFinite(refPrice) && refPrice > 0 ? refPrice : quote.bid;
   const buyPrice = isPending && Number.isFinite(refPrice) && refPrice > 0 ? refPrice : quote.ask;
-  const actionLabel = orderType === 'market' ? (side: Side) => (side === 'buy' ? 'Buy' : 'Sell') : () => (orderType === 'limit' ? 'Limit' : 'Stop');
+  const actionLabel =
+    orderType === 'market'
+      ? (side: Side) => (side === 'buy' ? 'Buy' : 'Sell')
+      : () => (orderType === 'limit' ? 'Limit' : 'Stop');
 
   return (
-    <PanelSection title="Order ticket" badge={orderType === 'market' ? 'Market' : orderType === 'limit' ? 'Limit' : 'Stop'}>
+    <PanelSection
+      title="Order ticket"
+      badge={orderType === 'market' ? 'Market' : orderType === 'limit' ? 'Limit' : 'Stop'}
+    >
       <div className="space-y-3.5">
         <div>
           <span className="mb-1 block text-[11px] text-ink-subtle">Order type</span>
@@ -154,8 +181,11 @@ export function OrderTicket() {
               setOrderType(next);
               setLimitPrice('');
               clearError();
+              clearPick();
+              setChartMode(next === 'limit' ? 'limit-price' : next === 'stop' ? 'stop-price' : null);
             }}
           />
+          <p className="mt-1.5 text-[11px] leading-snug text-ink-subtle">{TYPE_HINT[orderType]}</p>
         </div>
 
         <div>
@@ -172,10 +202,32 @@ export function OrderTicket() {
         </div>
 
         {isPending && (
-          <label className="block">
-            <span className="mb-1 block text-[11px] text-ink-subtle">
-              {orderType === 'limit' ? 'Limit price' : 'Stop price'}
-            </span>
+          <div className="block">
+            <div className="mb-1 flex items-center justify-between gap-2">
+              <span className="text-[11px] text-ink-subtle">
+                {orderType === 'limit' ? 'Limit price' : 'Stop price'}
+              </span>
+              <button
+                type="button"
+                onClick={() =>
+                  setChartMode(
+                    chartMode === (orderType === 'limit' ? 'limit-price' : 'stop-price')
+                      ? null
+                      : orderType === 'limit'
+                        ? 'limit-price'
+                        : 'stop-price',
+                  )
+                }
+                className={cn(
+                  'rounded-md px-2 py-0.5 text-[11px] font-medium transition',
+                  chartMode === 'limit-price' || chartMode === 'stop-price'
+                    ? 'bg-accent text-accent-ink'
+                    : 'bg-overlay text-ink-muted hover:text-ink',
+                )}
+              >
+                {chartMode === 'limit-price' || chartMode === 'stop-price' ? 'Tap chart…' : 'Pick on chart'}
+              </button>
+            </div>
             <input
               type="text"
               inputMode="decimal"
@@ -188,9 +240,11 @@ export function OrderTicket() {
               className="h-10 w-full rounded-lg border border-line bg-surface px-3 font-mono text-sm tabular-nums text-ink outline-none focus:border-accent"
             />
             <span className="mt-1 block text-[11px] text-ink-subtle">
-              Bid {formatPrice(quote.bid, SYMBOL)} · Ask {formatPrice(quote.ask, SYMBOL)}
+              {chartMode === 'limit-price' || chartMode === 'stop-price'
+                ? 'Tap the chart at the price you want filled.'
+                : `Bid ${formatPrice(quote.bid, SYMBOL)} · Ask ${formatPrice(quote.ask, SYMBOL)}`}
             </span>
-          </label>
+          </div>
         )}
 
         <div className="relative grid grid-cols-2 gap-2">
@@ -238,7 +292,14 @@ export function OrderTicket() {
           </div>
           <p className="mt-2 font-mono text-[11px] tabular-nums text-ink-subtle">
             1 pip = {formatMoney(pipValue(lots, SYMBOL))} · Margin{' '}
-            {formatMoney(marginFor(lots, isPending && Number.isFinite(refPrice) && refPrice > 0 ? refPrice : quote.ask, SYMBOL, leverage))}
+            {formatMoney(
+              marginFor(
+                lots,
+                isPending && Number.isFinite(refPrice) && refPrice > 0 ? refPrice : quote.ask,
+                SYMBOL,
+                leverage,
+              ),
+            )}
           </p>
         </div>
 
