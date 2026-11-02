@@ -1,5 +1,5 @@
 import { useMemo } from 'react';
-import { FlaskConical, FolderKanban, Target } from 'lucide-react';
+import { FlaskConical } from 'lucide-react';
 import { SYMBOL } from '@/data/marketData';
 import { computeStatistics } from '@/lib/statistics';
 import { formatMoney, formatPercent } from '@/lib/format';
@@ -14,8 +14,7 @@ export function DashboardView() {
   const displayName = useAuthStore((s) => s.user?.displayName ?? 'trader');
   const closed = useTradingStore((s) => s.closedTrades);
   const balance = useTradingStore((s) => s.balance);
-  // IMPORTANT: never filter/map inside a Zustand selector.
-  // A new array each call fails Object.is and causes React #185 with useSyncExternalStore.
+  // Never filter inside a Zustand selector — causes React #185.
   const allStrategies = useStrategyStore((s) => s.strategies);
   const strategies = useMemo(() => allStrategies.filter((x) => !x.archived), [allStrategies]);
   const sessions = useBacktestStore((s) => s.sessions);
@@ -47,36 +46,52 @@ export function DashboardView() {
       <header className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
         <div>
           <p className="text-[11px] font-semibold uppercase tracking-wider text-ink-subtle">{today}</p>
-          <h1 className="mt-1 text-xl font-semibold tracking-tight text-ink">Welcome back, {displayName}</h1>
-          <p className="mt-1 max-w-xl text-sm text-ink-muted">
-            Test strategies on historical data, record decisions, then measure what actually worked.
-          </p>
+          <h1 className="mt-1 text-xl font-semibold tracking-tight text-ink">
+            {displayName}
+          </h1>
         </div>
-        <button
-          type="button"
-          onClick={() => setView('new-backtest')}
-          className="inline-flex h-10 items-center justify-center gap-2 rounded-md bg-accent px-4 text-sm font-medium text-accent-ink hover:brightness-110"
-        >
-          <FlaskConical size={16} />
-          New Backtest
-        </button>
+        <div className="flex flex-wrap gap-2">
+          <button
+            type="button"
+            onClick={() => setView('workspace')}
+            className="inline-flex h-10 items-center justify-center gap-2 rounded-md border border-line px-4 text-sm font-medium text-ink hover:bg-overlay"
+          >
+            Open chart
+          </button>
+          <button
+            type="button"
+            onClick={() => setView('new-backtest')}
+            className="inline-flex h-10 items-center justify-center gap-2 rounded-md bg-accent px-4 text-sm font-medium text-accent-ink hover:brightness-110"
+          >
+            <FlaskConical size={16} />
+            New Backtest
+          </button>
+        </div>
       </header>
 
       {!hasActivity ? (
         <div className="mt-10 rounded-lg border border-line bg-surface p-8 text-center">
-          <p className="text-base font-semibold text-ink">Your testing workspace is ready</p>
-          <p className="mx-auto mt-2 max-w-md text-sm text-ink-muted">
-            Start your first backtest to begin measuring your strategy&apos;s performance. Configure the market and
-            risk, replay without look-ahead, then review real results.
+          <p className="text-base font-semibold text-ink">No backtests yet</p>
+          <p className="mx-auto mt-2 max-w-sm text-sm text-ink-muted">
+            Open the chart freely, or start a backtest with your own balance and risk settings.
           </p>
-          <button
-            type="button"
-            onClick={() => setView('new-backtest')}
-            className="mt-5 inline-flex h-10 items-center gap-2 rounded-md bg-accent px-4 text-sm font-medium text-accent-ink hover:brightness-110"
-          >
-            <FlaskConical size={16} />
-            Start your first backtest
-          </button>
+          <div className="mt-5 flex flex-wrap justify-center gap-2">
+            <button
+              type="button"
+              onClick={() => setView('workspace')}
+              className="inline-flex h-10 items-center rounded-md border border-line px-4 text-sm font-medium text-ink hover:bg-overlay"
+            >
+              Open chart
+            </button>
+            <button
+              type="button"
+              onClick={() => setView('new-backtest')}
+              className="inline-flex h-10 items-center gap-2 rounded-md bg-accent px-4 text-sm font-medium text-accent-ink hover:brightness-110"
+            >
+              <FlaskConical size={16} />
+              New Backtest
+            </button>
+          </div>
         </div>
       ) : (
         <>
@@ -110,38 +125,28 @@ export function DashboardView() {
           </section>
 
           {sessions.length > 0 && (
-            <section className="mt-10">
-              <div className="mb-3 flex items-center justify-between">
-                <h2 className="text-sm font-semibold text-ink">Recent backtests</h2>
-                <button
-                  type="button"
-                  onClick={() => setView('backtests')}
-                  className="text-xs font-medium text-accent hover:underline"
-                >
-                  View all
-                </button>
-              </div>
-              <ul className="space-y-2">
-                {sessions.slice(0, 5).map((s) => (
+            <section className="mt-8">
+              <h2 className="text-sm font-semibold text-ink">Recent backtests</h2>
+              <ul className="mt-3 space-y-2">
+                {sessions.slice(0, 8).map((s) => (
                   <li key={s.id}>
                     <button
                       type="button"
                       onClick={() => {
                         setActive(s.id);
-                        setView(s.status === 'completed' ? 'analytics' : 'workspace');
+                        setView('workspace');
                       }}
-                      className="flex w-full flex-col gap-1 rounded-lg border border-line bg-surface px-4 py-3 text-left transition hover:bg-raised sm:flex-row sm:items-center sm:justify-between"
+                      className="flex w-full items-center justify-between rounded-lg border border-line bg-surface px-4 py-3 text-left hover:bg-overlay"
                     >
-                      <div className="min-w-0">
-                        <p className="truncate text-sm font-medium text-ink">{s.config.name}</p>
-                        <p className="text-xs text-ink-muted">
-                          {s.config.instrument} · {s.config.timeframe} · {statusLabel(s.status)}
-                        </p>
-                      </div>
-                      <div className="text-xs text-ink-subtle sm:text-right">
-                        <p className="font-mono tabular-nums text-ink">{formatMoney(s.netPnl)}</p>
-                        <p>{s.tradeCount} trades</p>
-                      </div>
+                      <span>
+                        <span className="block text-sm font-medium text-ink">{s.config.name}</span>
+                        <span className="text-xs text-ink-muted">
+                          {s.config.instrument} · {statusLabel(s.status)}
+                        </span>
+                      </span>
+                      <span className="font-mono text-sm tabular-nums text-ink">
+                        {formatMoney(s.netPnl)}
+                      </span>
                     </button>
                   </li>
                 ))}
@@ -150,38 +155,6 @@ export function DashboardView() {
           )}
         </>
       )}
-
-      <section className="mt-10 grid gap-3 sm:grid-cols-3">
-        <button
-          type="button"
-          onClick={() => setView('new-backtest')}
-          className="rounded-lg border border-line bg-surface p-4 text-left transition hover:border-line-strong hover:bg-raised"
-        >
-          <FlaskConical size={18} className="text-accent" />
-          <p className="mt-3 text-sm font-semibold text-ink">Configure a backtest</p>
-          <p className="mt-1 text-xs text-ink-muted">Market, period, account risk, then open the workspace.</p>
-        </button>
-        <button
-          type="button"
-          onClick={() => setView('backtests')}
-          className="rounded-lg border border-line bg-surface p-4 text-left transition hover:border-line-strong hover:bg-raised"
-        >
-          <FolderKanban size={18} className="text-accent" />
-          <p className="mt-3 text-sm font-semibold text-ink">My Backtests</p>
-          <p className="mt-1 text-xs text-ink-muted">Resume or review experiments on this device.</p>
-        </button>
-        <button
-          type="button"
-          onClick={() => setView('strategies')}
-          className="rounded-lg border border-line bg-surface p-4 text-left transition hover:border-line-strong hover:bg-raised"
-        >
-          <Target size={18} className="text-accent" />
-          <p className="mt-3 text-sm font-semibold text-ink">Strategies</p>
-          <p className="mt-1 text-xs text-ink-muted">
-            {strategies.length} active {strategies.length === 1 ? 'methodology' : 'methodologies'}.
-          </p>
-        </button>
-      </section>
     </div>
   );
 }
