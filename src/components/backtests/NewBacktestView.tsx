@@ -23,7 +23,9 @@ export function NewBacktestView() {
   const setDraft = useBacktestStore((s) => s.setDraft);
   const tradingSettings = useTradingStore((s) => s.settings);
   const resetAccount = useTradingStore((s) => s.resetAccount);
-  const strategies = useStrategyStore((s) => s.strategies.filter((x) => !x.archived));
+  // Never filter inside the Zustand selector — new arrays each call cause React #185.
+  const allStrategies = useStrategyStore((s) => s.strategies);
+  const strategies = useMemo(() => allStrategies.filter((x) => !x.archived), [allStrategies]);
   const createStrategy = useStrategyStore((s) => s.createStrategy);
   const setActiveStrategy = useStrategyStore((s) => s.setActive);
   const activeId = useStrategyStore((s) => s.activeId);
