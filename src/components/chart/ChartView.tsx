@@ -1,2 +1,1 @@
-// TEMP: restoring — content too large for this intermediate step
-export { ChartView } from './ChartViewBroken';
+PLACEHOLDER_READ_FROM_DISK
